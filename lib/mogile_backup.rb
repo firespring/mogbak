@@ -1,21 +1,28 @@
 class MogileBackup
-  attr_accessor :dbhost, :dbport, :dbname, :dbuser, :dbpass, :domain, :path
+  attr_accessor :db, :db_host, :db_pass, :db_port, :db_user, :domain, :tracker_host, :tracker_port, :backup_path
 
   def initialize(o={})
-    @dbhost = o['dbhost'] if o['dbhost']
-    @dbport = o['dbport'] if o['dbport']
-    @dbname = o['dbname'] if o['dbname']
-    @dbuser = o['dbuser'] if o['dbuser']
-    @dbpass = o['dbpass'] if o['dbpass']
+    @db = o[:db] if o[:db]
+    @db_host = o[:db_host] if o[:db_host]
+    @db_pass = o[:db_pass] if o[:db_pass]
+    @db_port = o[:db_port] if o[:db_port]
+    @db_user = o[:db_user] if o[:db_user]
     @domain = o[:domain] if o[:domain]
-    @path = o[:path] if o[:path]
+    @tracker_host = o[:tracker_host] if o[:tracker_host]
+    @tracker_port = o[:tracker_port] if o[:tracker_port]
+    @backup_path = o[:backup_path] if o[:backup_path]
+
+    #Error if backup_path is not valid
+    raise 'backup_path is not a valid directory' unless File.directory?(@backup_path)
+
+    ap o
+    exit
 
     require ('domain')
     require('file')
     require('sqlite3')
     require('bakfile')
     require('fileclass')
-
   end
 
   def bak_file(file)

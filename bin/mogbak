@@ -21,44 +21,91 @@ require "mogilefs"
 
 include GLI
 
-program_desc 'Backup a mogilefs domain to the filesystem'
+program_desc 'Backup a mogilefs domain to the filesystem.  mogbak needs SELECT access to your MogileFS tracker database, which must
+currently be MySQL.'
 
 version Mogbak::VERSION
 
 
-desc 'Describe backup here'
-arg_name 'Describe arguments to backup here'
-command :backup do |c|
-  c.desc 'Describe a switch to backup'
-  c.switch :s
+desc 'Create a new full backup of a MogileFS domain'
+arg_name '[backup_path]'
+command :create do |c|
+  c.desc 'tracker host'
+  c.default_value 'localhost'
+  c.flag :trackerhost
 
-  c.desc 'Describe a flag to backup'
-  c.default_value 'default'
-  c.flag :f
-  c.action do |global_options,options,args|
+  c.desc 'tracker port'
+  c.default_value 'localhost'
+  c.flag :trackerport
 
-    # Your command logic here
-    mog = MogileBackup.new(:domain => 'testdata', :path => '/mnt/mogbak')
+  c.desc 'mogilefs domain'
+  c.default_value 'test'
+  c.flag :domain
+
+
+  c.desc 'mysql db server host'
+  c.default_value 'localhost'
+  c.flag :dbhost
+
+  c.desc 'mysql db server port'
+  c.default_value '3306'
+  c.flag :dbport
+
+  c.desc 'database name'
+  c.default_value 'mogilefs'
+  c.flag :db
+
+  c.desc 'database user'
+  c.default_value 'mogile'
+  c.flag :dbuser
+
+  c.desc 'database password'
+  c.flag :dbpass
+
+
+  c.action do |global_options, options, args|
+
+    #required options and arguments
+    raise '--dbpass is required' unless options[:dbpass]
+    raise '[backup_path] is required' unless args[0]
+
+    mog = MogileBackup.new(:tracker_host => options[:trackerhost],
+                           :tracker_port => options[:trackerport],
+                           :domain => options[:domain],
+                           :db_host => options[:dbhost],
+                           :db_port => options[:dbport],
+                           :db => options[:db],
+                           :db_user => options[:dbuser],
+                           :db_pass => options[:dbpass],
+                           :backup_path => args[0])
     mog.backup
     # If you have any errors, just raise them
     # raise "that command made no sense"
   end
 end
 
-pre do |global,command,options,args|
-  # Pre logic here
-  # Return true to proceed; false to abort and not call the
-  # chosen command
-  # Use skips_pre before a command to skip this block
-  # on that command only
-  true
+desc 'Start an incremental backup using an existing full backup'
+arg_name '[backup_path]'
+command :incremental do |c|
+  c.desc 'remove deleted files from backup TRUE/FALSE'
+  c.default_value 'TRUE'
+  c.flag :delete
 end
 
-post do |global,command,options,args|
-  # Post logic here
-  # Use skips_post before a command to skip this
-  # block on that command only
-end
+#pre do |global,command,options,args|
+#  # Pre logic here
+#  # Return true to proceed; false to abort and not call the
+#  # chosen command
+#  # Use skips_pre before a command to skip this block
+#  # on that command only
+#  true
+#end
+
+#post do |global,command,options,args|
+#  # Post logic here
+#  # Use skips_post before a command to skip this
+#  # block on that command only
+#end
 
 on_error do |exception|
   # Error logic here
