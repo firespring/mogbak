@@ -24,7 +24,7 @@ class Fid < ActiveRecord::Base
     /(?<b>\d)(?<mmm>\d{3})(?<ttt>\d{3})(?<hto>\d{3})/ =~ nfid
 
     #create the directory
-    directory_path = "/mnt/mogbak/#{b}/#{mmm}/#{ttt}"
+    directory_path = "#{$backup_path}/#{b}/#{mmm}/#{ttt}"
     FileUtils.mkdir_p(directory_path)
 
     return "#{directory_path}/#{nfid}.fid"

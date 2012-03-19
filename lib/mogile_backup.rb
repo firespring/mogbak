@@ -11,16 +11,50 @@ class MogileBackup
     @tracker_host = o[:tracker_host] if o[:tracker_host]
     @tracker_port = o[:tracker_port] if o[:tracker_port]
     @backup_path = o[:backup_path] if o[:backup_path]
+    $backup_path = @backup_path
 
     #Error if backup_path is not valid
     raise 'backup_path is not a valid directory' unless File.directory?(@backup_path)
 
-    ap o
-    exit
+    #create the sqlite database
+    begin
+    if !File.exists?("#{@backup_path}/db.sqlite")
+      SQLite3::Database.new("#{@backup_path}/db.sqlite")
+    end
+    rescue Exception => e
+      ap e
+      raise "Could not create #{@backup_path}/db.sqlite - check permissions"
+    end
+
+    #connect and run migrations
+    begin
+    ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => "#{@backup_path}/db.sqlite").connection
+    rescue
+      raise "Could not open #{@backup_path}/db.sqlite"
+    end
+
+    #run migrations
+    begin
+      ActiveRecord::Migrator.up("db/migrate/")
+    rescue
+      raise "could not run migrations on #{@backup_path}/db.sqlite"
+    end
+
+
+
+    #Verify that we can connect to the mogilefs mysql server
+    begin
+      ActiveRecord::Base.establish_connection({:adapter => "mysql2",
+                                               :host => @db_host,
+                                               :username => @db_user,
+                                               :password => @db_pass,
+                                               :database => @db}).connection
+    rescue Exception => e
+      raise 'Could not connect to MySQL database'
+    end
 
     require ('domain')
     require('file')
-    require('sqlite3')
     require('bakfile')
     require('fileclass')
   end

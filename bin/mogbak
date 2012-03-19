@@ -18,6 +18,8 @@ require 'mogile_backup.rb'
 require 'active_record'
 require 'awesome_print'
 require "mogilefs"
+require('sqlite3')
+
 
 include GLI
 
