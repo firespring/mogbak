@@ -1,0 +1,5 @@
+= mogbak
+
+Generate this with
+    mogbak rdoc
+After you have described your command line interface
