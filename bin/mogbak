@@ -1,7 +1,4 @@
 #!/usr/bin/env ruby
-# 1.9 adds realpath to resolve symlinks; 1.8 doesn't
-# have this method, so we add it so we get resolved symlinks
-# and compatibility
 unless File.respond_to? :realpath
   class File #:nodoc:
     def self.realpath path
@@ -14,30 +11,28 @@ $: << File.expand_path(File.dirname(File.realpath(__FILE__)) + '/../lib')
 require 'rubygems'
 require 'gli'
 require 'mogbak_version'
-require 'mogile_backup.rb'
+require 'mogile_backup_full.rb'
+require 'mogile_backup_incremental.rb'
 require 'active_record'
 require 'awesome_print'
 require "mogilefs"
 require('sqlite3')
 
-
 include GLI
-
 program_desc 'Backup a mogilefs domain to the filesystem.  mogbak needs SELECT access to your MogileFS tracker database, which must
 currently be MySQL.'
 
 version Mogbak::VERSION
 
-
 desc 'Create a new full backup of a MogileFS domain'
 arg_name '[backup_path]'
 command :create do |c|
-  c.desc 'tracker host'
-  c.default_value 'localhost'
-  c.flag :trackerhost
+  c.desc 'tracker ip'
+  c.default_value '127.0.0.1'
+  c.flag :trackerip
 
   c.desc 'tracker port'
-  c.default_value 'localhost'
+  c.default_value 7001
   c.flag :trackerport
 
   c.desc 'mogilefs domain'
@@ -50,7 +45,7 @@ command :create do |c|
   c.flag :dbhost
 
   c.desc 'mysql db server port'
-  c.default_value '3306'
+  c.default_value 3306
   c.flag :dbport
 
   c.desc 'database name'
@@ -61,17 +56,20 @@ command :create do |c|
   c.default_value 'mogile'
   c.flag :dbuser
 
-  c.desc 'database password'
+  c.desc 'database password (REQUIRED)'
   c.flag :dbpass
+
+  c.desc "don't start the backup"
+  c.switch ['no-bak']
 
 
   c.action do |global_options, options, args|
 
     #required options and arguments
     raise '--dbpass is required' unless options[:dbpass]
-    raise '[backup_path] is required' unless args[0]
+    raise '[backup_path] is required see mogadm - see: mogbak help create' unless args[0]
 
-    mog = MogileBackup.new(:tracker_host => options[:trackerhost],
+    mog = MogileBackupFull.new(:tracker_ip => options[:trackerip],
                            :tracker_port => options[:trackerport],
                            :domain => options[:domain],
                            :db_host => options[:dbhost],
@@ -80,39 +78,30 @@ command :create do |c|
                            :db_user => options[:dbuser],
                            :db_pass => options[:dbpass],
                            :backup_path => args[0])
-    mog.backup
-    # If you have any errors, just raise them
-    # raise "that command made no sense"
+    mog.backup(:no_delete => true) unless options[:"no-bak"]
   end
 end
 
 desc 'Start an incremental backup using an existing full backup'
 arg_name '[backup_path]'
 command :incremental do |c|
-  c.desc 'remove deleted files from backup TRUE/FALSE'
-  c.default_value 'TRUE'
-  c.flag :delete
+  c.desc 'do not remove deleted files from the backup (faster)'
+  c.switch ['no-delete']
+
+  c.action do |global_options, options, args|
+    raise '[backup_path] is required - see: mogbak help incremental' unless args[0]
+    mog = MogileBackupIncremental.new(args[0])
+    mog.backup(:no_delete => options[:"no-delete"])
+  end
+
 end
-
-#pre do |global,command,options,args|
-#  # Pre logic here
-#  # Return true to proceed; false to abort and not call the
-#  # chosen command
-#  # Use skips_pre before a command to skip this block
-#  # on that command only
-#  true
-#end
-
-#post do |global,command,options,args|
-#  # Post logic here
-#  # Use skips_post before a command to skip this
-#  # block on that command only
-#end
 
 on_error do |exception|
   # Error logic here
-  ap exception
-  ap exception.backtrace
+  puts exception
+  puts ''
+  puts 'Backtrace:'
+  puts exception.backtrace
   # return false to skip default error handling
   true
 end

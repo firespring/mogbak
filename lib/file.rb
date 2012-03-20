@@ -12,12 +12,7 @@ class Fid < ActiveRecord::Base
     sfid = "#{self.fid}"
     length = sfid.length
     if length < 10
-      length = 10 - length
-      pad = ''
-      length.times do
-        pad = "#{pad}0"
-      end
-      nfid = pad + sfid
+      nfid = "0" * (10 - length) + sfid
     else
       nfid = fid
     end
@@ -27,18 +22,13 @@ class Fid < ActiveRecord::Base
     directory_path = "#{$backup_path}/#{b}/#{mmm}/#{ttt}"
     FileUtils.mkdir_p(directory_path)
 
-    return "#{directory_path}/#{nfid}.fid"
+    return "#{$backup_path}/#{nfid}.fid"
   end
 
   #Get a file from MogileFS and save it to the destination path.  TRUE if success, false if there was an error
   def save_to_fs
-
-    #open a connection mogile if one does not already exist
-    @@mg ||= MogileFS::MogileFS.new(:domain => 'testdata', :hosts => %w[127.0.0.1:7001])
-
-
     begin
-      @@mg.get_file_data(dkey, path)
+      $mg.get_file_data(dkey, path)
     rescue Exception => e
       return false
     end
