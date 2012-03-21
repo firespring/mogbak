@@ -14,10 +14,10 @@ LVM snapshots.
     mogbak list /backups/awesomeapp
     
 ###Backups suck if you can't restore,  well good thing we can
-    mogbak restore --domain=restoreawesomeapp --trackerip=10.10.10.10
+    mogbak restore --domain=restoreawesomeapp --trackerip=10.10.10.10 /backups/awesomeapp
     
 ###Maybe you just want to restore one file?
-    mogbak restore --domain=restoreawesomeapp --trackerip=10.10.10.10 --single-file=abc1234file
+    mogbak restore --domain=restoreawesomeapp --trackerip=10.10.10.10 --single-file=abc1234file /backups/awesomeapp
 
 
 ###Why does Mogbak need to connect to my database?
