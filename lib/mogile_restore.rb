@@ -38,13 +38,24 @@ class MogileRestore
     require('fileclass')
   end
 
-  def restore
-    files = BakFile.find_each(:conditions => ['saved = ?', true]) do |file|
+  def output_save(save, fid)
+    if save
+      puts "Restored: FID #{fid}"
+    else
+      puts "Error: FID #{fid}"
+    end
+  end
+
+  def restore(dkey = false)
+    if dkey
+      file = BakFile.find_by_dkey(dkey)
+      raise 'file not found in backup' unless file
       save = file.restore
-      if save
-        puts "Restored: FID #{file.fid}"
-      else
-        puts "Error: FID #{file.fid}"
+      output_save(save, file.fid)
+    else
+      BakFile.find_each(:conditions => ['saved = ?', true]) do |file|
+        save = file.restore
+        output_save(save, file.fid)
       end
     end
   end

@@ -119,6 +119,9 @@ command :restore do |c|
   c.desc 'restore dest mogilefs domain (REQUIRED)'
   c.flag :domain
 
+  c.desc 'restore a single file by dkey'
+  c.flag :"single-file"
+
   c.action do |global_options, options, args|
     raise 'domain parameter is required - see: mogbak help restore' unless options[:domain]
     raise '[backup_path] is required - see: mogbak help restore' unless args[0]
@@ -126,7 +129,7 @@ command :restore do |c|
                                 :tracker_port => options[:trackerport],
                                 :domain => options[:domain],
                                 :backup_path => args[0])
-    restore.restore
+    restore.restore(options[:"single-file"])
   end
 end
 
