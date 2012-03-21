@@ -11,20 +11,24 @@ $: << File.expand_path(File.dirname(File.realpath(__FILE__)) + '/../lib')
 require 'rubygems'
 require 'gli'
 require 'mogbak_version'
-require 'mogile_backup_full.rb'
-require 'mogile_backup_incremental.rb'
+require 'mogile_backup'
+require 'mogile_restore'
 require 'active_record'
-require 'awesome_print'
 require "mogilefs"
-require('sqlite3')
+require 'sqlite3'
+require 'yaml'
+require 'util'
 
 include GLI
 program_desc 'Backup a mogilefs domain to the filesystem.  mogbak needs SELECT access to your MogileFS tracker database, which must
 currently be MySQL.'
 
+desc 'enable debug mode'
+switch ['debug']
+
 version Mogbak::VERSION
 
-desc 'Create a new full backup of a MogileFS domain'
+desc 'Create a new backup profile for a MogileFS domain'
 arg_name '[backup_path]'
 command :create do |c|
   c.desc 'tracker ip'
@@ -59,9 +63,6 @@ command :create do |c|
   c.desc 'database password (REQUIRED)'
   c.flag :dbpass
 
-  c.desc "don't start the backup"
-  c.switch ['no-bak']
-
 
   c.action do |global_options, options, args|
 
@@ -69,39 +70,84 @@ command :create do |c|
     raise '--dbpass is required' unless options[:dbpass]
     raise '[backup_path] is required see mogadm - see: mogbak help create' unless args[0]
 
-    mog = MogileBackupFull.new(:tracker_ip => options[:trackerip],
-                           :tracker_port => options[:trackerport],
-                           :domain => options[:domain],
-                           :db_host => options[:dbhost],
-                           :db_port => options[:dbport],
-                           :db => options[:db],
-                           :db_user => options[:dbuser],
-                           :db_pass => options[:dbpass],
-                           :backup_path => args[0])
-    mog.backup(:no_delete => true) unless options[:"no-bak"]
+    mog = MogileBackup.new(:create,
+                               {:tracker_ip => options[:trackerip],
+                               :tracker_port => options[:trackerport],
+                               :domain => options[:domain],
+                               :db_host => options[:dbhost],
+                               :db_port => options[:dbport],
+                               :db => options[:db],
+                               :db_user => options[:dbuser],
+                               :db_pass => options[:dbpass],
+                               :backup_path => args[0]})
+    puts "Backup profile successfully created. To start a backup run: mogbak backup #{args[0]}"
   end
 end
 
-desc 'Start an incremental backup using an existing full backup'
+desc 'Start a backup using an existing backup profile'
 arg_name '[backup_path]'
-command :incremental do |c|
+command :backup do |c|
   c.desc 'do not remove deleted files from the backup (faster)'
   c.switch ['no-delete']
 
   c.action do |global_options, options, args|
-    raise '[backup_path] is required - see: mogbak help incremental' unless args[0]
-    mog = MogileBackupIncremental.new(args[0])
+    raise '[backup_path] is required - see: mogbak help backup' unless args[0]
+    mog = MogileBackup.new(:backup, {:backup_path => args[0]})
     mog.backup(:no_delete => options[:"no-delete"])
   end
 
 end
 
+desc 'Restore a backup to a new MogileFS domain.'
+long_desc <<EOS
+This function restores all files in backup to the new domain. It does not keep track of what has been restored, so the
+restore cannot be stopped and resumed.  If it fails to restore a file it will output an error.  It restores the files with
+the same class that they were created with.  It is expected that you will create those classes on the domain before restoring.
+EOS
+arg_name '[backup_path]'
+command :restore do |c|
+
+  c.desc 'restore dest tracker ip'
+  c.default_value '127.0.0.1'
+  c.flag :trackerip
+
+  c.desc 'restore dest tracker port'
+  c.default_value 7001
+  c.flag :trackerport
+
+  c.desc 'restore dest mogilefs domain (REQUIRED)'
+  c.flag :domain
+
+  c.action do |global_options, options, args|
+    raise 'domain parameter is required - see: mogbak help restore' unless options[:domain]
+    raise '[backup_path] is required - see: mogbak help restore' unless args[0]
+    restore = MogileRestore.new(:tracker_ip => options[:trackerip],
+                                :tracker_port => options[:trackerport],
+                                :domain => options[:domain],
+                                :backup_path => args[0])
+    restore.restore
+  end
+end
+
+#If the user passes in --debug we can detect it here.
+pre do |global_options, command, options, args|
+  $debug = global_options[:debug]
+  true
+end
+
+#If debug is enabled we'll spit out the exception and the entire backtrace.  Otherwise it will just output
+#the exception message
 on_error do |exception|
   # Error logic here
-  puts exception
-  puts ''
-  puts 'Backtrace:'
-  puts exception.backtrace
+
+  if $debug
+    puts exception
+    puts ''
+    puts 'Backtrace:'
+    puts exception.backtrace
+    return false
+  end
+
   # return false to skip default error handling
   true
 end

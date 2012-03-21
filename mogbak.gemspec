@@ -3,21 +3,23 @@ require File.join([File.dirname(__FILE__),'lib','mogbak_version.rb'])
 spec = Gem::Specification.new do |s| 
   s.name = 'mogbak'
   s.version = Mogbak::VERSION
-  s.author = 'Your Name Here'
-  s.email = 'your@email.address.com'
-  s.homepage = 'http://your.website.com'
+  s.author = 'Jesse Angell'
+  s.email = 'jesse.angell@firespring.com'
+  s.homepage = 'http://www.github.com/firespring/mogbak'
   s.platform = Gem::Platform::RUBY
-  s.summary = 'A description of your project'
-# Add your other files here if you make them
-  s.files = %w(
-bin/mogbak
-  )
+  s.summary = 'Utility for backing up and restoring MogileFS domains'
+  s.files         = `git ls-files`.split("\n")
   s.require_paths << 'lib'
-  s.has_rdoc = true
-  s.extra_rdoc_files = ['README.rdoc','mogbak.rdoc']
-  s.rdoc_options << '--title' << 'mogbak' << '--main' << 'README.rdoc' << '-ri'
   s.bindir = 'bin'
   s.executables << 'mogbak'
-  s.add_development_dependency('rake')
-  s.add_development_dependency('rdoc')
+  s.add_development_dependency('awesome_print')
+
+  s.add_runtime_dependency('gli')
+  s.add_runtime_dependency('mysql2')
+  s.add_runtime_dependency('mogilefs-client')
+  s.add_runtime_dependency('json')
+  s.add_runtime_dependency('sqlite3')
+
+
+
 end

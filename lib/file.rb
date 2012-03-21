@@ -6,30 +6,15 @@ class Fid < ActiveRecord::Base
   belongs_to :fileclass,
              :foreign_key => "classid"
 
-  #This produces a hashed path very similar to mogilefs just without the device id.  It also recursively creates the
-  #directory inside the backup
-  def path
-    sfid = "#{self.fid}"
-    length = sfid.length
-    if length < 10
-      nfid = "0" * (10 - length) + sfid
-    else
-      nfid = fid
-    end
-    /(?<b>\d)(?<mmm>\d{3})(?<ttt>\d{3})(?<hto>\d{3})/ =~ nfid
-
-    #create the directory
-    directory_path = "#{$backup_path}/#{b}/#{mmm}/#{ttt}"
-    FileUtils.mkdir_p(directory_path)
-
-    return "#{$backup_path}/#{nfid}.fid"
-  end
-
   #Get a file from MogileFS and save it to the destination path.  TRUE if success, false if there was an error
   def save_to_fs
     begin
+      path = Util.path(self.fid)
       $mg.get_file_data(dkey, path)
     rescue Exception => e
+      if $debug
+        raise e
+      end
       return false
     end
     true
