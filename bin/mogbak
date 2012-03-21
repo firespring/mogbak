@@ -13,6 +13,7 @@ require 'gli'
 require 'mogbak_version'
 require 'mogile_backup'
 require 'mogile_restore'
+require 'mogile_list'
 require 'active_record'
 require "mogilefs"
 require 'sqlite3'
@@ -129,6 +130,18 @@ command :restore do |c|
   end
 end
 
+desc 'List the files in a backup'
+long_desc <<EOS
+Output is: fid,dkey,length,classname
+EOS
+arg_name '[backup_path]'
+command :list do |c|
+  c.action do |global_options, options, args|
+    raise '[backup_path] is required - see: mogbak help list' unless args[0]
+    list = MogileList.new(:backup_path => args[0])
+    list.list
+  end
+end
 #If the user passes in --debug we can detect it here.
 pre do |global_options, command, options, args|
   $debug = global_options[:debug]

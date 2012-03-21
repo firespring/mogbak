@@ -39,7 +39,7 @@ class MogileRestore
   end
 
   def restore
-    files = BakFile.find_each() do |file|
+    files = BakFile.find_each(:conditions => ['saved = ?', true]) do |file|
       save = file.restore
       if save
         puts "Restored: FID #{file.fid}"
@@ -48,5 +48,4 @@ class MogileRestore
       end
     end
   end
-
 end
