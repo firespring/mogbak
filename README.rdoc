@@ -1,6 +1,0 @@
-= mogbak
-
-Describe your project here
-
-:include:mogbak.rdoc
-
