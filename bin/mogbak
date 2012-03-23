@@ -15,6 +15,7 @@ require 'mogile_backup'
 require 'mogile_restore'
 require 'mogile_list'
 require 'active_record'
+require 'activerecord-import'
 require "mogilefs"
 require 'sqlite3'
 require 'yaml'

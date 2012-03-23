@@ -86,9 +86,10 @@ class MogileBackup
 
     #connect and run migrations
     begin
-      ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => "#{$backup_path}/db.sqlite", :timeout=>1000).connection
-    rescue
-      raise "Could not open #{$backup_path}/db.sqlite"
+      ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => "#{$backup_path}/db.sqlite", :timeout => 1000)
+    rescue Exception => e
+      raise e
+      #raise "Could not open #{$backup_path}/db.sqlite"
     end
 
     #run migrations
@@ -107,7 +108,7 @@ class MogileBackup
                                                :username => @db_user,
                                                :password => @db_pass,
                                                :database => @db,
-                                               :reconnect => true}).connection
+                                               :reconnect => true})
     rescue Exception => e
       raise 'Could not connect to MySQL database'
     end
@@ -156,35 +157,44 @@ class MogileBackup
     #now back up any new files.  if they fail to be backed up we'll retry them the next time the backup
     #command is ran.
     dmid = Domain.find_by_namespace(self.domain)
-    results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 1000, :include => :domain) do |files|
+    results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 2000, :include => [:domain, :fileclass]) do |files|
 
       #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
-      BakFile.transaction do
-        files.each do |file|
-          BakFile.create(:fid => file.fid,
-                         :domain => file.domain.namespace,
-                         :dkey => file.dkey,
-                         :length => file.length,
-                         :classname => file.classname,
-                         :saved => false)
-        end
+      bulk = []
+      files.each do |file|
+        bulk << BakFile.new(:fid => file.fid,
+                            :domain => file.domain.namespace,
+                            :dkey => file.dkey,
+                            :length => file.length,
+                            :classname => file.classname,
+                            :saved => false)
       end
-      parent = Proc.new { |result|
-        file = result[:file]
-        saved = result[:saved]
-        if saved
-          BakFile.transaction do
-            BakFile.where(:fid => file.fid).update_all(:saved => true)
-          end
+      BakFile.import bulk, :validate => false
+
+
+      parent = Proc.new { |results|
+
+        fids = []
+
+        results.each do |result|
+          file = result[:file]
+          saved = result[:saved]
+          fids << file.fid if saved
         end
+
+        BakFile.update_all({:saved => true}, {:fid => fids})
 
         #release the connection from the connection pool
         SqliteActiveRecord.clear_active_connections!
       }
 
-      child = Proc.new { |file|
-        saved = bak_file(file)
-        {:saved => saved, :file => file}
+      child = Proc.new { |files|
+        result = []
+        files.each do |file|
+          saved = bak_file(file)
+          result << {:saved => saved, :file => file}
+        end
+        result
       }
 
       Util.hybrid_fork(self.processes.to_i, files, parent, child)
