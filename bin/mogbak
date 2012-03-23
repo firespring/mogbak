@@ -29,6 +29,37 @@ switch ['debug']
 
 version Mogbak::VERSION
 
+#MONKEY PATCH
+class Array
+  def in_groups(number, fill_with = nil)
+    # size / number gives minor group size;
+    # size % number gives how many objects need extra accommodation;
+    # each group hold either division or division + 1 items.
+    division = size / number
+    modulo = size % number
+
+    # create a new array avoiding dup
+    groups = []
+    start = 0
+
+    number.times do |index|
+      length = division + (modulo > 0 && modulo > index ? 1 : 0)
+      padding = fill_with != false &&
+          modulo > 0 && length == division ? 1 : 0
+      groups << slice(start, length).concat([fill_with] * padding)
+      start += length
+    end
+
+    if block_given?
+      groups.each { |g| yield(g) }
+    else
+      groups
+    end
+  end
+end
+#MONKEY PATCH
+
+
 desc 'Create a new backup profile for a MogileFS domain'
 arg_name '[backup_path]'
 command :create do |c|
@@ -72,15 +103,15 @@ command :create do |c|
     raise '[backup_path] is required see mogadm - see: mogbak help create' unless args[0]
 
     mog = MogileBackup.new(:create,
-                               {:tracker_ip => options[:trackerip],
-                               :tracker_port => options[:trackerport],
-                               :domain => options[:domain],
-                               :db_host => options[:dbhost],
-                               :db_port => options[:dbport],
-                               :db => options[:db],
-                               :db_user => options[:dbuser],
-                               :db_pass => options[:dbpass],
-                               :backup_path => args[0]})
+                           {:tracker_ip => options[:trackerip],
+                            :tracker_port => options[:trackerport],
+                            :domain => options[:domain],
+                            :db_host => options[:dbhost],
+                            :db_port => options[:dbport],
+                            :db => options[:db],
+                            :db_user => options[:dbuser],
+                            :db_pass => options[:dbpass],
+                            :backup_path => args[0]})
     puts "Backup profile successfully created. To start a backup run: mogbak backup #{args[0]}"
   end
 end
@@ -91,9 +122,13 @@ command :backup do |c|
   c.desc 'do not remove deleted files from the backup (faster)'
   c.switch ['no-delete']
 
+  c.desc 'Number of worker processes'
+  c.default_value 1
+  c.flag :processes
+
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help backup' unless args[0]
-    mog = MogileBackup.new(:backup, {:backup_path => args[0]})
+    mog = MogileBackup.new(:backup, {:backup_path => args[0], :processes => options[:processes]})
     mog.backup(:no_delete => options[:"no-delete"])
   end
 

@@ -42,6 +42,7 @@ class MogileBackup
       @domain = settings['domain']
       @tracker_ip = settings['tracker_ip']
       @tracker_port = settings['tracker_port']
+      @processes = o[:processes] if o[:processes]
       @backup_path = path
       $backup_path = @backup_path
 
@@ -85,7 +86,7 @@ class MogileBackup
 
     #connect and run migrations
     begin
-      ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => "#{$backup_path}/db.sqlite").connection
+      ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => "#{$backup_path}/db.sqlite", :timeout=>1000).connection
     rescue
       raise "Could not open #{$backup_path}/db.sqlite"
     end
@@ -105,7 +106,8 @@ class MogileBackup
                                                :port => @db_port,
                                                :username => @db_user,
                                                :password => @db_pass,
-                                               :database => @db}).connection
+                                               :database => @db,
+                                               :reconnect => true}).connection
     rescue Exception => e
       raise 'Could not connect to MySQL database'
     end
@@ -128,11 +130,11 @@ class MogileBackup
   def bak_file(file)
     saved = file.save_to_fs
 
-    if saved
-      puts "Backed up: FID #{file.fid}"
-    else
-      puts "Error - will try again on next run: FID #{file.fid}"
-    end
+    #if saved
+    #  puts "Backed up: FID #{file.fid}"
+    #else
+    #  puts "Error - will try again on next run: FID #{file.fid}"
+    #end
 
     return saved
   end
@@ -152,6 +154,12 @@ class MogileBackup
       end
     end
 
+
+    ##Adding shit
+
+    ##End shit
+
+
     #now back up any new files.  if they fail to be backed up we'll retry them the next time the backup
     #command is ran.
     dmid = Domain.find_by_namespace(self.domain)
@@ -166,6 +174,40 @@ class MogileBackup
                        :saved => saved)
       end
     end
+
+    results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 1000, :include => :domain) do |files|
+      require ('awesome_print')
+
+      #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
+      BakFile.transaction do
+        files.each do |file|
+          BakFile.create(:fid => file.fid,
+                         :domain => file.domain.namespace,
+                         :dkey => file.dkey,
+                         :length => file.length,
+                         :classname => file.classname,
+                         :saved => false)
+        end
+      end
+      parent = Proc.new { |result|
+        file = result[:file]
+        saved = result[:saved]
+        if saved
+          BakFile.update_all(:saved => true, :fid => file.id)
+        end
+      }
+
+      child = Proc.new { |file|
+        ActiveRecord::Base.connection.disconnect!
+        saved = bak_file(file)
+        {:saved => saved, :file => file}
+      }
+
+      Util.hybrid_fork(5, files, parent, child)
+      ActiveRecord::Base.connection.reconnect!
+
+    end
+
 
     if !o[:no_delete]
       #Delete files from the backup that no longer exist in the mogilefs domain
