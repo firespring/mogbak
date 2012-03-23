@@ -1,5 +1,5 @@
 class MogileBackup
-  attr_accessor :db, :db_host, :db_port, :db_pass, :db_user, :domain, :tracker_host, :tracker_port, :backup_path, :processes
+  attr_accessor :db, :db_host, :db_port, :db_pass, :db_user, :domain, :tracker_host, :tracker_port, :backup_path, :workers
 
   def initialize(mode, o={})
     if mode == :create
@@ -42,7 +42,7 @@ class MogileBackup
       @domain = settings['domain']
       @tracker_ip = settings['tracker_ip']
       @tracker_port = settings['tracker_port']
-      @processes = o[:processes] if o[:processes]
+      @workers = o[:workers] if o[:workers]
       @backup_path = path
       $backup_path = @backup_path
 
@@ -129,7 +129,7 @@ class MogileBackup
   end
 
   def bak_file(file)
-    saved = file.save_to_fs
+    saved = file.bak_it
     if saved
       puts "Backed up: FID #{file.fid}"
     else
@@ -139,67 +139,104 @@ class MogileBackup
     return saved
   end
 
+  def launch_backup_workers(files)
+    parent = Proc.new { |results|
+      fids = []
+
+      results.each do |result|
+        file = result[:file]
+        saved = result[:saved]
+        fids << file.fid if saved
+      end
+
+
+      BakFile.update_all({:saved => true}, {:fid => fids})
+
+      #release the connection from the connection pool
+      SqliteActiveRecord.clear_active_connections!
+    }
+
+    child = Proc.new { |files|
+      result = []
+      files.each do |file|
+        break if file.nil?
+        saved = bak_file(file)
+        result << {:saved => saved, :file => file}
+      end
+      result
+    }
+
+    Util.hybrid_fork(self.workers.to_i, files, parent, child)
+  end
+
+  def launch_delete_workers(fids)
+    child = Proc.new { |fids|
+      result = []
+      fids.each do |fid|
+        break if fid.nil?
+        deleted = BakFile.delete_from_fs(fid)
+        if deleted
+          puts "Deleting from backup: FID #{fid}"
+        else
+          puts "Failed to delete from backup: FID #{fid}"
+        end
+
+        result << fid
+      end
+      result
+    }
+
+    parent = Proc.new { |results|
+      fids = []
+
+      results.each do |result|
+        fids << result
+      end
+
+      BakFile.delete_all({:fid => fids})
+
+      #release the connection from the connection pool
+      SqliteActiveRecord.clear_active_connections!
+    }
+
+    Util.hybrid_fork(self.workers.to_i, fids, parent, child)
+
+  end
+
   def backup(o = {})
 
+    files = []
     #first we retry files that we haven't been able to backup successfully, if any.
     BakFile.find_each(:conditions => ['saved = ?', false]) do |bak_file|
-      file = Fid.find_by_fid(bak_file.fid)
-      saved = bak_file(file)
-      if saved
-        BakFile.transaction do
-          bak = BakFile.find_by_fid(bak_file.fid)
-          bak.saved = true
-          bak.save
-        end
-      end
+       files << bak_file
     end
+
+    launch_backup_workers(files)
 
     #now back up any new files.  if they fail to be backed up we'll retry them the next time the backup
     #command is ran.
     dmid = Domain.find_by_namespace(self.domain)
-    results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 2000, :include => [:domain, :fileclass]) do |files|
+    results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 2000, :include => [:domain, :fileclass]) do |batch|
 
       #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
-      bulk = []
-      files.each do |file|
-        bulk << BakFile.new(:fid => file.fid,
+      files = []
+      batch.each do |file|
+        files << BakFile.new(:fid => file.fid,
                             :domain => file.domain.namespace,
                             :dkey => file.dkey,
                             :length => file.length,
                             :classname => file.classname,
                             :saved => false)
       end
-      BakFile.import bulk, :validate => false
+      BakFile.transaction do
+        BakFile.import files, :validate => false
+      end
 
-
-      parent = Proc.new { |results|
-
-        fids = []
-
-        results.each do |result|
-          file = result[:file]
-          saved = result[:saved]
-          fids << file.fid if saved
-        end
-
-        BakFile.update_all({:saved => true}, {:fid => fids})
-
-        #release the connection from the connection pool
-        SqliteActiveRecord.clear_active_connections!
-      }
-
-      child = Proc.new { |files|
-        result = []
-        files.each do |file|
-          saved = bak_file(file)
-          result << {:saved => saved, :file => file}
-        end
-        result
-      }
-
-      Util.hybrid_fork(self.processes.to_i, files, parent, child)
+      launch_backup_workers(files)
 
     end
+
+
 
     if !o[:no_delete]
       #Delete files from the backup that no longer exist in the mogilefs domain
@@ -215,16 +252,10 @@ class MogileBackup
         files = connection.select_values("SELECT t1.fid FROM (#{union}) as t1 LEFT JOIN file on t1.fid = file.fid WHERE file.fid IS NULL")
         files_to_delete += files
       }
-      files_to_delete.each do |del_file|
-        BakFile.transaction do
-          delete = BakFile.where(:fid => del_file).first.destroy
-          if delete
-            puts "Deleting from backup: FID #{del_file}"
-          else
-            puts "Failed to delete from backup: FID #{del_file}"
-          end
-        end
-      end
+
+      launch_delete_workers(files_to_delete)
+
+
     end
 
   end

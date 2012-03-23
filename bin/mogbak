@@ -125,11 +125,11 @@ command :backup do |c|
 
   c.desc 'Number of worker processes'
   c.default_value 1
-  c.flag :processes
+  c.flag :workers
 
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help backup' unless args[0]
-    mog = MogileBackup.new(:backup, {:backup_path => args[0], :processes => options[:processes].to_i})
+    mog = MogileBackup.new(:backup, {:backup_path => args[0], :workers => options[:workers].to_i})
     mog.backup(:no_delete => options[:"no-delete"])
   end
 
@@ -155,6 +155,10 @@ command :restore do |c|
   c.desc 'restore dest mogilefs domain (REQUIRED)'
   c.flag :domain
 
+  c.desc 'Number of worker processes'
+  c.default_value 1
+  c.flag :workers
+
   c.desc 'restore a single file by dkey'
   c.flag :"single-file"
 
@@ -164,7 +168,8 @@ command :restore do |c|
     restore = MogileRestore.new(:tracker_ip => options[:trackerip],
                                 :tracker_port => options[:trackerport],
                                 :domain => options[:domain],
-                                :backup_path => args[0])
+                                :backup_path => args[0],
+                                :workers => options[:workers])
     restore.restore(options[:"single-file"])
   end
 end

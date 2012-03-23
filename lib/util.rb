@@ -88,23 +88,10 @@ class Util
         pid = child[:pid]
         njobs = jobs[i - 1]
 
-        #one job at a time
-        #njobs.each do |job|
-        #  break if job == nil
-        #  semaphore.synchronize do
-        #    Marshal.dump(job, child[:write])
-        #    result = Marshal.load(child[:read])
-        #    parent_proc.call(result)
-        #  end
-        #end
 
-        #all jobs at once
-          #semaphore.synchronize do
             Marshal.dump(njobs, child[:write])
             result = Marshal.load(child[:read])
         semaphore.synchronize { parent_proc.call(result) }
-         # end
-
 
 
 

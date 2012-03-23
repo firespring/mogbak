@@ -28,6 +28,34 @@ class BakFile < SqliteActiveRecord
     end
   end
 
+
+  #Get a file from MogileFS and save it to the destination path.  TRUE if success, false if there was an error
+  def bak_it
+    begin
+      path = Util.path(self.fid)
+      $mg.get_file_data(self.dkey, path)
+    rescue Exception => e
+      if $debug
+        raise e
+      end
+      return false
+    end
+    true
+  end
+
+
+  #Delete from filesystem using just a fid
+  def self.delete_from_fs(delete_fid)
+    begin
+      File.delete(Util.path(delete_fid))
+    rescue Exception => e
+      if $debug
+        raise e
+      end
+    end
+  end
+
+
   #delete file from filesystem
   before_destroy do
     path = Util.path(self.fid)
