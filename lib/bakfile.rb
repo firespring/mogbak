@@ -31,6 +31,12 @@ class BakFile < SqliteActiveRecord
   #delete file from filesystem
   before_destroy do
     path = Util.path(self.fid)
-    File.delete(path)
+    begin
+      File.delete(path)
+    rescue Exception => e
+      if $debug
+        raise e
+      end
+    end
   end
 end
