@@ -35,6 +35,8 @@ class Util
     child_read, parent_write = IO.pipe
     parent_read, child_write = IO.pipe
 
+    mog_config = ActiveRecord::Base.remove_connection
+
     pid = Process.fork do
       begin
 
@@ -42,8 +44,6 @@ class Util
         parent_read.close
 
         while !child_read.eof? do
-          #puts Marshal.load(child_read)
-          #Marshal.dump('Hello parent!', child_write)
           job = Marshal.load(child_read)
           result = child_proc.call(job)
           Marshal.dump(result, child_write)
@@ -54,6 +54,9 @@ class Util
         child_write.close
       end
     end
+
+    ActiveRecord::Base.establish_connection(mog_config)
+
 
     child_read.close
     child_write.close
@@ -69,10 +72,19 @@ class Util
     #split the jobs up
     jobs = jobs.in_groups(qty)
 
+    #spawn the children
+    children = []
+    qty.times { children << make_child(child_proc)}
+
 
     qty.times do |i|
+
       threads[i] = Thread.new do
-        child = make_child(child_proc)
+        Thread.current.abort_on_exception = true
+
+        child = {}
+        semaphore.synchronize { child = children.pop }
+
         pid = child[:pid]
         njobs = jobs[i - 1]
 
@@ -84,19 +96,20 @@ class Util
             parent_proc.call(result)
           end
 
-          #parent_proc.call(result)
         end
 
-        #exit
-        #parent_proc.call(child[:read], child[:write], semaphore)
 
         #close the pipe
         child[:write].close
 
         Process.wait(pid)
+
+        #close db connection
+        SqliteActiveRecord.connection.close
       end
     end
     wait_for_threads(threads)
+
   end
 
 

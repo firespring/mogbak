@@ -128,7 +128,7 @@ command :backup do |c|
 
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help backup' unless args[0]
-    mog = MogileBackup.new(:backup, {:backup_path => args[0], :processes => options[:processes]})
+    mog = MogileBackup.new(:backup, {:backup_path => args[0], :processes => options[:processes].to_i})
     mog.backup(:no_delete => options[:"no-delete"])
   end
 

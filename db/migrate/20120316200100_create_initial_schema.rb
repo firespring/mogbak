@@ -8,10 +8,10 @@ class CreateInitialSchema < ActiveRecord::Migration
       t.string :classname, :limit => 255
       t.boolean :saved, :default => false
     end
-    #add_index :files, :fid
+    add_index :bak_files, :fid
   end
 
   def self.down
-    drop_table :files
+    drop_table :bak_files
   end
 end
