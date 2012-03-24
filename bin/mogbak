@@ -20,6 +20,8 @@ require "mogilefs"
 require 'sqlite3'
 require 'yaml'
 require 'util'
+#Set master process name
+$0 = "mogbak [master]"
 
 include GLI
 program_desc 'Backup a mogilefs domain to the filesystem.  mogbak needs SELECT access to your MogileFS tracker database, which must

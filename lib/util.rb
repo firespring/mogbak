@@ -39,7 +39,7 @@ class Util
 
     pid = Process.fork do
       begin
-
+        $0 = "mogbak [worker]"
         parent_write.close
         parent_read.close
 
