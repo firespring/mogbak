@@ -18,7 +18,7 @@ class BakFile < SqliteActiveRecord
 
   #restore
   def restore
-    path = Util.path(self.fid)
+    path = MogileHelper.path(self.fid)
     begin
       $mg.store_file(self.dkey, self.classname, path)
     rescue Exception => e
@@ -32,7 +32,7 @@ class BakFile < SqliteActiveRecord
   #Get a file from MogileFS and save it to the destination path.  TRUE if success, false if there was an error
   def bak_it
     begin
-      path = Util.path(self.fid)
+      path = MogileHelper.path(self.fid)
       $mg.get_file_data(self.dkey, path)
     rescue Exception => e
       if $debug
@@ -47,7 +47,7 @@ class BakFile < SqliteActiveRecord
   #Delete from filesystem using just a fid
   def self.delete_from_fs(delete_fid)
     begin
-      File.delete(Util.path(delete_fid))
+      File.delete(MogileHelper.path(delete_fid))
     rescue Exception => e
       if $debug
         raise e
@@ -58,7 +58,7 @@ class BakFile < SqliteActiveRecord
 
   #delete file from filesystem
   before_destroy do
-    path = Util.path(self.fid)
+    path = MogileHelper.path(self.fid)
     begin
       File.delete(path)
     rescue Exception => e

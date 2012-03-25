@@ -1,25 +1,4 @@
-class Util
-  #This produces a hashed path very similar to mogilefs just without the device id.  It also recursively creates the
-  #directory inside the backup
-  def self.path(sfid)
-    sfid = "#{sfid}"
-    length = sfid.length
-    if length < 10
-      nfid = "0" * (10 - length) + sfid
-    else
-      nfid = fid
-    end
-    /(?<b>\d)(?<mmm>\d{3})(?<ttt>\d{3})(?<hto>\d{3})/ =~ nfid
-
-    #create the directory
-    directory_path = "#{$backup_path}/#{b}/#{mmm}/#{ttt}"
-    FileUtils.mkdir_p(directory_path)
-
-    return "#{directory_path}/#{nfid}.fid"
-  end
-
-
-
+class Forker
 
   def self.wait_for_threads(threads)
     threads.compact.each do |t|
@@ -39,12 +18,14 @@ class Util
 
     pid = Process.fork do
       begin
-        $0 = "mogbak [worker]"
+
         parent_write.close
         parent_read.close
 
         while !child_read.eof? do
+          $0 = "mogbak [idle]"
           job = Marshal.load(child_read)
+          $0 = "mogbak [working]"
           result = child_proc.call(job)
           Marshal.dump(result, child_write)
         end
@@ -69,8 +50,10 @@ class Util
     threads = []
     semaphore = Mutex.new
 
-    #split the jobs up
-    jobs = jobs.in_groups(qty)
+    require('thread')
+    #add jobs to queue
+    queue = Queue.new
+    jobs.each { |job| queue << job}
 
     #spawn the children
     children = []
@@ -94,6 +77,9 @@ class Util
         pid = child[:pid]
         njobs = jobs[i - 1]
 
+        loop do
+          job = queue.pop
+        end
 
             Marshal.dump(njobs, child[:write])
             result = Marshal.load(child[:read])

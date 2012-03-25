@@ -166,7 +166,7 @@ class MogileBackup
       result
     }
 
-    Util.hybrid_fork(self.workers.to_i, files, parent, child)
+    Forker.hybrid_fork(self.workers.to_i, files, parent, child)
   end
 
   def launch_delete_workers(fids)
@@ -199,7 +199,7 @@ class MogileBackup
       SqliteActiveRecord.clear_active_connections!
     }
 
-    Util.hybrid_fork(self.workers.to_i, fids, parent, child)
+    Forker.hybrid_fork(self.workers.to_i, fids, parent, child)
 
   end
 
@@ -216,7 +216,7 @@ class MogileBackup
     #now back up any new files.  if they fail to be backed up we'll retry them the next time the backup
     #command is ran.
     dmid = Domain.find_by_namespace(self.domain)
-    results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 2000, :include => [:domain, :fileclass]) do |batch|
+    results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 500 * self.workers.to_i, :include => [:domain, :fileclass]) do |batch|
 
       #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
       files = []

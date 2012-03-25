@@ -63,7 +63,7 @@ class MogileRestore
       SqliteActiveRecord.clear_active_connections!
     }
 
-    Util.hybrid_fork(self.workers.to_i, files, parent, child)
+    Forker.hybrid_fork(self.workers.to_i, files, parent, child)
 
   end
 
