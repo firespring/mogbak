@@ -1,4 +1,4 @@
-class MogileRestore
+class Restore
   attr_accessor :domain, :tracker_host, :tracker_port, :backup_path, :workers
 
   def initialize(o={})

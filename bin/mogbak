@@ -3,16 +3,16 @@ require 'monkey_patch'
 require 'rubygems'
 require 'gli'
 require 'mogbak_version'
-require 'mogile_backup'
-require 'mogile_restore'
-require 'mogile_list'
+require 'backup'
+require 'restore'
+require 'list'
 require 'active_record'
 require 'activerecord-import'
 require "mogilefs"
 require 'sqlite3'
 require 'yaml'
 require 'forker'
-require 'mogile_helper'
+require 'helper'
 $: << File.expand_path(File.dirname(File.realpath(__FILE__)) + '/../lib')
 
 
@@ -70,7 +70,7 @@ command :create do |c|
     raise '--dbpass is required' unless options[:dbpass]
     raise '[backup_path] is required see mogadm - see: mogbak help create' unless args[0]
 
-    mog = MogileBackup.new(:create,
+    mog = Backup.new(:create,
                            {:tracker_ip => options[:trackerip],
                             :tracker_port => options[:trackerport],
                             :domain => options[:domain],
@@ -96,7 +96,7 @@ command :backup do |c|
 
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help backup' unless args[0]
-    mog = MogileBackup.new(:backup, {:backup_path => args[0], :workers => options[:workers].to_i})
+    mog = Backup.new(:backup, {:backup_path => args[0], :workers => options[:workers].to_i})
     mog.backup(:no_delete => options[:"no-delete"])
   end
 
@@ -132,7 +132,7 @@ command :restore do |c|
   c.action do |global_options, options, args|
     raise 'domain parameter is required - see: mogbak help restore' unless options[:domain]
     raise '[backup_path] is required - see: mogbak help restore' unless args[0]
-    restore = MogileRestore.new(:tracker_ip => options[:trackerip],
+    restore = Restore.new(:tracker_ip => options[:trackerip],
                                 :tracker_port => options[:trackerport],
                                 :domain => options[:domain],
                                 :backup_path => args[0],
@@ -149,7 +149,7 @@ arg_name '[backup_path]'
 command :list do |c|
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help list' unless args[0]
-    list = MogileList.new(:backup_path => args[0])
+    list = List.new(:backup_path => args[0])
     list.list
   end
 end

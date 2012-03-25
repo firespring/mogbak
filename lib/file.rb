@@ -9,7 +9,7 @@ class Fid < ActiveRecord::Base
   #Get a file from MogileFS and save it to the destination path.  TRUE if success, false if there was an error
   def save_to_fs
     begin
-      path = MogileHelper.path(self.fid)
+      path = PathHelper.path(self.fid)
       $mg.get_file_data(dkey, path)
     rescue Exception => e
       if $debug

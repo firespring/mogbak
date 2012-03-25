@@ -1,4 +1,4 @@
-class MogileBackup
+class Backup
   attr_accessor :db, :db_host, :db_port, :db_pass, :db_user, :domain, :tracker_host, :tracker_port, :backup_path, :workers
 
   def initialize(mode, o={})

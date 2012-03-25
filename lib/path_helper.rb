@@ -1,4 +1,4 @@
-class MogileHelper
+class PathHelper
   #This produces a hashed path very similar to mogilefs just without the device id.  It also recursively creates the
   #directory inside the backup
   def self.path(sfid)

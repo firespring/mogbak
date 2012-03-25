@@ -1,4 +1,4 @@
-class MogileList
+class List
   attr_accessor :backup_path
 
   def initialize(o={})
