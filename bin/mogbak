@@ -163,8 +163,6 @@ end
 #If debug is enabled we'll spit out the exception and the entire backtrace.  Otherwise it will just output
 #the exception message
 on_error do |exception|
-  # Error logic here
-
   if $debug
     puts exception
     puts ''
@@ -172,7 +170,6 @@ on_error do |exception|
     puts exception.backtrace
     return false
   end
-
   true
 end
 

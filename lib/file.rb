@@ -1,3 +1,5 @@
+#represents files that are in the MogileFS database.  This model is used for talking to the MogileFS database via
+#ActiveRecord
 class Fid < ActiveRecord::Base
   self.primary_key = "fid"
   self.table_name = "file"
@@ -6,21 +8,8 @@ class Fid < ActiveRecord::Base
   belongs_to :fileclass,
              :foreign_key => "classid"
 
-  #Get a file from MogileFS and save it to the destination path.  TRUE if success, false if there was an error
-  def save_to_fs
-    begin
-      path = PathHelper.path(self.fid)
-      $mg.get_file_data(dkey, path)
-    rescue Exception => e
-      if $debug
-        raise e
-      end
-      return false
-    end
-    true
-  end
-
   #If there is no fileclass then it is the default class
+  #@return [String] name of class file belongs to
   def classname
     if fileclass
       fileclass.classname

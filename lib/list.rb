@@ -1,6 +1,9 @@
+#List the files in a MogileFS backup with their metadata
 class List
   attr_accessor :backup_path
 
+  #initialize the list object
+  #@param[Hash] o :backup_path is required
   def initialize(o={})
     @backup_path = o[:backup_path] if o[:backup_path]
     $backup_path = @backup_path

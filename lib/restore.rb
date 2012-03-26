@@ -63,7 +63,7 @@ class Restore
       SqliteActiveRecord.clear_active_connections!
     }
 
-    Forker.hybrid_fork(self.workers.to_i, files, parent, child)
+    Forkinator.hybrid_fork(self.workers.to_i, files, parent, child)
 
   end
 
