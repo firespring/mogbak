@@ -1,8 +1,21 @@
 #!/usr/bin/env ruby
+#Realpath didn't exist in Ruby 1.8 so we'll add it.
+unless File.respond_to? :realpath
+  class File #:nodoc:
+    def self.realpath path
+      return realpath(File.readlink(path)) if symlink?(path)
+      path
+    end
+  end
+end
+$: << File.expand_path(File.dirname(File.realpath(__FILE__)) + '/../lib')
+
 require 'monkey_patch'
 require 'rubygems'
 require 'gli'
 require 'mogbak_version'
+require 'validations'
+require 'create'
 require 'backup'
 require 'restore'
 require 'list'
@@ -11,9 +24,8 @@ require 'activerecord-import'
 require "mogilefs"
 require 'sqlite3'
 require 'yaml'
-require 'forker'
-require 'helper'
-$: << File.expand_path(File.dirname(File.realpath(__FILE__)) + '/../lib')
+require 'forkinator'
+require 'path_helper'
 
 
 #Set master process name
@@ -69,17 +81,17 @@ command :create do |c|
     #required options and arguments
     raise '--dbpass is required' unless options[:dbpass]
     raise '[backup_path] is required see mogadm - see: mogbak help create' unless args[0]
+    $backup_path = args[0]
 
-    mog = Backup.new(:create,
-                           {:tracker_ip => options[:trackerip],
-                            :tracker_port => options[:trackerport],
-                            :domain => options[:domain],
-                            :db_host => options[:dbhost],
-                            :db_port => options[:dbport],
-                            :db => options[:db],
-                            :db_user => options[:dbuser],
-                            :db_pass => options[:dbpass],
-                            :backup_path => args[0]})
+    mog = Create.new(:tracker_ip => options[:trackerip],
+                      :tracker_port => options[:trackerport],
+                      :domain => options[:domain],
+                      :db_host => options[:dbhost],
+                      :db_port => options[:dbport],
+                      :db => options[:db],
+                      :db_user => options[:dbuser],
+                      :db_pass => options[:dbpass],
+                      :backup_path => args[0])
     puts "Backup profile successfully created. To start a backup run: mogbak backup #{args[0]}"
   end
 end
@@ -96,7 +108,8 @@ command :backup do |c|
 
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help backup' unless args[0]
-    mog = Backup.new(:backup, {:backup_path => args[0], :workers => options[:workers].to_i})
+    $backup_path = args[0]
+    mog = Backup.new(:backup_path => args[0], :workers => options[:workers].to_i)
     mog.backup(:no_delete => options[:"no-delete"])
   end
 
@@ -132,11 +145,13 @@ command :restore do |c|
   c.action do |global_options, options, args|
     raise 'domain parameter is required - see: mogbak help restore' unless options[:domain]
     raise '[backup_path] is required - see: mogbak help restore' unless args[0]
+    $backup_path = args[0]
+
     restore = Restore.new(:tracker_ip => options[:trackerip],
-                                :tracker_port => options[:trackerport],
-                                :domain => options[:domain],
-                                :backup_path => args[0],
-                                :workers => options[:workers])
+                          :tracker_port => options[:trackerport],
+                          :domain => options[:domain],
+                          :backup_path => args[0],
+                          :workers => options[:workers])
     restore.restore(options[:"single-file"])
   end
 end
@@ -149,6 +164,8 @@ arg_name '[backup_path]'
 command :list do |c|
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help list' unless args[0]
+    $backup_path = args[0]
+
     list = List.new(:backup_path => args[0])
     list.list
   end

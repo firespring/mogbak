@@ -1,146 +1,41 @@
-#Creates a backup of a MogileFS cluster and is capable of resyncing that backup.
+#Used to backup a mogilefs domain using a backup profile.
 class Backup
-  attr_accessor :db, :db_host, :db_port, :db_pass, :db_user, :domain, :tracker_host, :tracker_port, :backup_path, :workers
+  attr_accessor :db, :db_host, :db_port, :db_pass, :db_user, :domain, :tracker_host, :tracker_port, :workers
+  include Validations
 
-  #Initialize has two modes,  :create and :backup.  :create is used to initalize the sqlite database for the backup,  ensure
-  #the user provided valid settings,  and generate a settings.yml in the backup directory.  This makes it so that users
-  #don't have to continue to pass in a long string of options for each backup.
-  #@param [Symbol] mode must be either :create or :backup
+  #Run validations and prepare the object for a backup
   #@param [Hash] o hash containing the settings for the backup
-  #@return [Bool] object initialized successfully
-  def initialize(mode, o={})
-    if mode == :create
-      @db = o[:db] if o[:db]
-      @db_host = o[:db_host] if o[:db_host]
-      @db_port = o[:db_port] if o[:db_port]
-      @db_pass = o[:db_pass] if o[:db_pass]
-      @db_user = o[:db_user] if o[:db_user]
-      @domain = o[:domain] if o[:domain]
-      @tracker_ip = o[:tracker_ip] if o[:tracker_ip]
-      @tracker_port = o[:tracker_port] if o[:tracker_port]
-      @backup_path = o[:backup_path] if o[:backup_path]
-      $backup_path = @backup_path
+  def initialize(o={})
+
+    #Load up the settings file
+    check_settings_file
+    settings = YAML::load(File.open("#{$backup_path}/settings.yml"))
+    @db = settings['db']
+    @db_host = settings['db_host']
+    @db_port = settings['db_port']
+    @db_pass = settings['db_pass']
+    @db_user = settings['db_user']
+    @domain = settings['domain']
+    @tracker_ip = settings['tracker_ip']
+    @tracker_port = settings['tracker_port']
+    @workers = o[:workers] if o[:workers]
 
 
-      #If settings.yml exists then this is an existing backup and you cannot run a create on top of it
-      if File.exists?("#{$backup_path}/settings.yml")
-        raise "Cannot run create on an existing backup.  Try: mogbak backup #{$backup_path} to backup.  If you want
-        to change settings on this backup profile you will have to edit #{$backup_path}/settings.yml manually."
-      end
+    #run validations and setup
+    raise  unless check_backup_path
+    create_sqlite_db
+    connect_sqlite
+    migrate_sqlite
+    mogile_db_connect
+    mogile_tracker_connect
+    check_mogile_domain(domain)
 
-      #Run other settings checks
-      check_settings
-
-      #Save settings
-      save_settings
-    else
-      path = o[:backup_path]
-      #If settings file does not exist then this is not a valid mogilefs backup
-      settings_file = "#{path}/settings.yml"
-      raise "settings.yml not found in path.  This must not be a backup profile. See: mogbak help create" unless File.exists?(settings_file)
-
-      #Load up the settings file
-      settings = YAML::load(File.open(settings_file))
-      @db = settings['db']
-      @db_host = settings['db_host']
-      @db_port = settings['db_port']
-      @db_pass = settings['db_pass']
-      @db_user = settings['db_user']
-      @domain = settings['domain']
-      @tracker_ip = settings['tracker_ip']
-      @tracker_port = settings['tracker_port']
-      @workers = o[:workers] if o[:workers]
-      @backup_path = path
-      $backup_path = @backup_path
-
-      #verify settings
-      check_settings
-    end
-  end
-
-  #Save the settings for the backup into a yaml file (settings.yaml) so that an incremental can be ran without so many parameters
-  #@return [Bool] true or false
-  def save_settings
-    require ('yaml')
-    settings = {
-        'db' => @db,
-        'db_host' => @db_host,
-        'db_port' => @db_port,
-        'db_pass' => @db_pass,
-        'db_user' => @db_user,
-        'domain' => @domain,
-        'tracker_ip' => @tracker_ip,
-        'tracker_port' => @tracker_port,
-        'backup_path' => $backup_path
-    }
-
-    File.open("#{$backup_path}/settings.yml", "w") do |file|
-      file.write settings.to_yaml
-    end
-
-    true
-  end
-
-  #Validate that all the user provided settings are correct,  also creates a new sqlite database if there isn't one and
-  #runs migrations against an existing database.
-  #@return [Bool] true or false
-  def check_settings
-    #Error if backup_path is not valid
-    raise 'backup_path is not a valid directory' unless File.directory?($backup_path)
-
-    #create the sqlite database
-    begin
-      if !File.exists?("#{$backup_path}/db.sqlite")
-        SQLite3::Database.new("#{$backup_path}/db.sqlite")
-      end
-    rescue Exception => e
-      raise "Could not create #{$backup_path}/db.sqlite - check permissions"
-    end
-
-    #connect and run migrations
-    begin
-      ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => "#{$backup_path}/db.sqlite", :timeout => 1000)
-    rescue Exception => e
-      raise e
-      #raise "Could not open #{$backup_path}/db.sqlite"
-    end
-
-    #run migrations
-    begin
-      ActiveRecord::Migrator.up("db/migrate/")
-    rescue
-      raise "could not run migrations on #{$backup_path}/db.sqlite"
-    end
-
-
-    #Verify that we can connect to the mogilefs mysql server
-    begin
-      ActiveRecord::Base.establish_connection({:adapter => "mysql2",
-                                               :host => @db_host,
-                                               :port => @db_port,
-                                               :username => @db_user,
-                                               :password => @db_pass,
-                                               :database => @db,
-                                               :reconnect => true})
-    rescue Exception => e
-      raise 'Could not connect to MySQL database'
-    end
-
-    #open our mogilefs tracker connection
-    host = ["#{@tracker_ip}:#{@tracker_port}"]
-    $mg = MogileFS::MogileFS.new(:domain => @domain, :hosts => host)
-
-    #Now that database is all setup load the model classes
     require ('domain')
     require('file')
     require('bakfile')
     require('fileclass')
-
-    #check to see if domain exists
-    raise 'Domain does not exist in MogileFS.  Cannot backup' unless Domain.find_by_namespace(self.domain)
-
-    true
   end
+
 
   #Create a backup of a file using a BakFile object
   #@param [BakFile] file file that needs to be backed up
@@ -197,7 +92,7 @@ class Backup
   def launch_delete_workers(fids)
 
     #This proc receives an array of BakFiles, handles them,  and spits them back to the parent.
-  child = Proc.new { |fids|
+    child = Proc.new { |fids|
       result = []
       fids.each do |fid|
         break if fid.nil?
@@ -241,7 +136,7 @@ class Backup
     files = []
     #first we retry files that we haven't been able to backup successfully, if any.
     BakFile.find_each(:conditions => ['saved = ?', false]) do |bak_file|
-       files << bak_file
+      files << bak_file
     end
 
     launch_backup_workers(files)
@@ -255,11 +150,11 @@ class Backup
       files = []
       batch.each do |file|
         files << BakFile.new(:fid => file.fid,
-                            :domain => file.domain.namespace,
-                            :dkey => file.dkey,
-                            :length => file.length,
-                            :classname => file.classname,
-                            :saved => false)
+                             :domain => file.domain.namespace,
+                             :dkey => file.dkey,
+                             :length => file.length,
+                             :classname => file.classname,
+                             :saved => false)
       end
 
       #There is no way to do a bulk insert in sqlite so this generates a lot of inserts.  wrapping all of the inserts

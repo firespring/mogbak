@@ -1,12 +1,4 @@
-unless File.respond_to? :realpath
-  class File #:nodoc:
-    def self.realpath path
-      return realpath(File.readlink(path)) if symlink?(path)
-      path
-    end
-  end
-end
-
+#pretty useful rails method.  Splits an array into groups
 class Array
   def in_groups(number, fill_with = nil)
     # size / number gives minor group size;
