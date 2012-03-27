@@ -52,3 +52,6 @@ There are certainly things that could be done about the above issues.  Pull requ
 
 ####How to install?
     gem install mogbak
+
+####Syntax?
+See https://github.com/firespring/mogbak/wiki/Command-syntax
