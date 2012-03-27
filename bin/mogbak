@@ -79,7 +79,7 @@ command :create do |c|
   c.action do |global_options, options, args|
 
     #required options and arguments
-    raise '--dbpass is required' unless options[:dbpass]
+    raise '--dbpass is required - see: mogbak help creater' unless options[:dbpass]
     raise '[backup_path] is required see mogadm - see: mogbak help create' unless args[0]
     $backup_path = args[0]
 

@@ -8,7 +8,8 @@ spec = Gem::Specification.new do |s|
   s.email = 'jesse.angell@firespring.com'
   s.homepage = 'http://www.github.com/firespring/mogbak'
   s.platform = Gem::Platform::RUBY
-  s.summary = 'Utility for backing up and restoring MogileFS domains'
+  s.summary = 'Backup utility for MogileFS'
+  s.description = 'mogbak makes it easy to backup and restore mogilefs domains'
   s.files         = `git ls-files`.split("\n")
   s.require_paths << 'lib'
   s.bindir = 'bin'
