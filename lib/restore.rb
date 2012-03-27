@@ -1,6 +1,7 @@
 #Restore a mogbak backup to a MogileFS domain
 class Restore
   attr_accessor :domain, :tracker_host, :tracker_port, :backup_path, :workers
+  include Validations
 
   #
   def initialize(o={})

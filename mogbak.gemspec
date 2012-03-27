@@ -16,12 +16,12 @@ spec = Gem::Specification.new do |s|
   s.executables << 'mogbak'
   s.add_development_dependency('awesome_print')
 
-  s.add_runtime_dependency('gli')
-  s.add_runtime_dependency('mysql2')
-  s.add_runtime_dependency('mogilefs-client')
-  s.add_runtime_dependency('json')
-  s.add_runtime_dependency('sqlite3')
-  s.add_runtime_dependency('activerecord-import')
+  s.add_runtime_dependency('gli', '>= 1.5.1')
+  s.add_runtime_dependency('mysql2', '>= 0.3.11')
+  s.add_runtime_dependency('mogilefs-client','>= 3.1.1')
+  s.add_runtime_dependency('json','>= 1.6.5')
+  s.add_runtime_dependency('sqlite3','>=1.3.5')
+  s.add_runtime_dependency('activerecord-import','>=0.2.9')
 
 
 end
