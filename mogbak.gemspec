@@ -2,6 +2,7 @@
 require File.join([File.dirname(__FILE__),'lib','mogbak_version.rb'])
 spec = Gem::Specification.new do |s| 
   s.name = 'mogbak'
+  s.license = "MIT"
   s.version = Mogbak::VERSION
   s.author = 'Jesse Angell'
   s.email = 'jesse.angell@firespring.com'
