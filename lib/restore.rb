@@ -39,6 +39,7 @@ class Restore
       results = []
       files.each do |file|
         break if file.nil?
+        break if SignalHandler.instance.should_quit
         save = file.restore
         output_save(save, file.fid)
         results << {:restored => save, :fid => file.fid}
@@ -64,6 +65,7 @@ class Restore
 
       BakFile.find_in_batches(:conditions => ['saved = ?', true], :batch_size => 2000) do |batch|
         launch_restore_workers(batch)
+        break if SignalHandler.instance.should_quit
       end
 
     end
