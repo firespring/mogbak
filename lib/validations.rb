@@ -45,7 +45,7 @@ module Validations
   #@return [Bool]
   def connect_sqlite(raise_msg = nil)
     begin
-      ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => "#{$backup_path}/db.sqlite", :timeout => 1000)
+      ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => "#{$backup_path}/db.sqlite", :timeout => 10000)
     rescue Exception => e
       raise raise_msg if raise_msg
       raise e if $debug
