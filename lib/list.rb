@@ -21,8 +21,13 @@ class List
   #Outputs a list of files in CSV format
   #fid,key,length,class
   def list
+
+    #activate signal handler
+    SignalHandler.instance
+
     files = BakFile.find_each(:conditions => ['saved = ?', true]) do |file|
       puts "#{file.fid},#{file.dkey},#{file.length},#{file.classname}"
+      break if SignalHandler.instance.should_quit
     end
   end
 end

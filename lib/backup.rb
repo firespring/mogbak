@@ -72,11 +72,13 @@ class Backup
       SqliteActiveRecord.clear_active_connections!
     }
 
-    #This proc receives an array of BakFiles,  proccesses them,  and returns a result array to the parent proc
+    #This proc receives an array of BakFiles,  proccesses them,  and returns a result array to the parent proc. We will break
+    #from the files if the signal handler says so.
     child = Proc.new { |files|
       result = []
       files.each do |file|
         break if file.nil?
+        break if SignalHandler.instance.should_quit
         saved = bak_file(file)
         result << {:saved => saved, :file => file}
       end
@@ -91,11 +93,13 @@ class Backup
   #param [Array] files must be an array of BakFiles that need to be deleted
   def launch_delete_workers(fids)
 
-    #This proc receives an array of BakFiles, handles them,  and spits them back to the parent.
+    #This proc receives an array of BakFiles, handles them,  and spits them back to the parent, break from the fids if
+    #the signal handler says so.
     child = Proc.new { |fids|
       result = []
       fids.each do |fid|
         break if fid.nil?
+        break if SignalHandler.instance.should_quit
         deleted = BakFile.delete_from_fs(fid)
         if deleted
           puts "Deleting from backup: FID #{fid}"
@@ -166,6 +170,8 @@ class Backup
       #Fire up the workers now that we have work for them to do
       launch_backup_workers(files)
 
+      #exit this loop if the signal handler says so
+      break if SignalHandler.instance.should_quit
     end
 
     #Delete files from the backup that no longer exist in the mogilefs domain.  Unfortunently there is no easy way to detect
