@@ -19,9 +19,6 @@ spec = Gem::Specification.new do |s|
   s.add_runtime_dependency('gli', '>= 1.5.1')
   s.add_runtime_dependency('mysql2', '>= 0.3.11')
   s.add_runtime_dependency('mogilefs-client','>= 3.1.1')
-  s.add_runtime_dependency('json','>= 1.6.5')
   s.add_runtime_dependency('sqlite3','>=1.3.5')
   s.add_runtime_dependency('activerecord-import','>=0.2.9')
-
-
 end
