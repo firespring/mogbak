@@ -26,6 +26,7 @@ require 'sqlite3'
 require 'yaml'
 require 'forkinator'
 require 'path_helper'
+require ('signal_handler')
 
 
 #Set master process name

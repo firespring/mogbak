@@ -88,13 +88,6 @@ class Forkinator
     children = []
     qty.times { children << make_child(child_proc)}
 
-    #register signal handler so that children kill if program receives a SIGINT
-    #which will happen if the user ctrl c's the parent process
-    Signal.trap :SIGINT do
-      children.each { |child| Process.kill(:KILL, child[:pid]) if child[:pid]}
-      exit 1
-    end
-
     #For each worker
     qty.times do |i|
 
