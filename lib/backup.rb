@@ -22,7 +22,7 @@ class Backup
 
 
     #run validations and setup
-    raise  unless check_backup_path
+    raise unless check_backup_path
     create_sqlite_db
     connect_sqlite
     migrate_sqlite
@@ -137,66 +137,72 @@ class Backup
   #@param [Hash] o if :no_delete then don't remove deleted files from the backup (intensive process)
   def backup(o = {})
 
-    files = []
-    #first we retry files that we haven't been able to backup successfully, if any.
-    BakFile.find_each(:conditions => ['saved = ?', false]) do |bak_file|
-      files << bak_file
-    end
-
-    launch_backup_workers(files)
-
-    #now back up any new files.  if they fail to be backed up we'll retry them the next time the backup
-    #command is ran.
-    dmid = Domain.find_by_namespace(self.domain)
-    results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 500 * self.workers.to_i, :include => [:domain, :fileclass]) do |batch|
-
-      #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
+    #Loop over the main backup logic.  We'll break out at the end unless o[:non_stop] is set
+    loop do
       files = []
-      batch.each do |file|
-        files << BakFile.new(:fid => file.fid,
-                             :domain => file.domain.namespace,
-                             :dkey => file.dkey,
-                             :length => file.length,
-                             :classname => file.classname,
-                             :saved => false)
+      #first we retry files that we haven't been able to backup successfully, if any.
+      BakFile.find_each(:conditions => ['saved = ?', false]) do |bak_file|
+        files << bak_file
       end
 
-      #There is no way to do a bulk insert in sqlite so this generates a lot of inserts.  wrapping all of the inserts
-      #inside a single transaction makes it much much faster.
-      BakFile.transaction do
-        BakFile.import files, :validate => false
-      end
-
-      #Fire up the workers now that we have work for them to do
       launch_backup_workers(files)
 
-      #exit this loop if the signal handler says so
-      break if SignalHandler.instance.should_quit
-    end
+      #now back up any new files.  if they fail to be backed up we'll retry them the next time the backup
+      #command is ran.
+      dmid = Domain.find_by_namespace(self.domain)
+      results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 500 * self.workers.to_i, :include => [:domain, :fileclass]) do |batch|
 
-    #Delete files from the backup that no longer exist in the mogilefs domain.  Unfortunently there is no easy way to detect
-    #which files have been deleted from the MogileFS domain.  Our only option is to brute force our way through.  This is a bulk
-    #query that checks a thousand files in each query against the MogileFS database server.  The query is kind of tricky because
-    #I wanted to do this with nothing but SELECT privileges which meant I couldn't create a temporary table (which would require,
-    #create temporary table and insert privleges).  You might want to only run this operation every once and awhile if you have a
-    #very large domain.  In my testing,  it is able to get through domains with millions of files in a matter of a second.  So
-    #all in all it's not so bad
-    if !o[:no_delete]
-      files_to_delete = Array.new
-      BakFile.find_in_batches { |bak_files|
-
-        union = "SELECT #{bak_files.first.fid} as fid"
-        bak_files.shift
-        bak_files.each do |bakfile|
-          union = "#{union} UNION SELECT #{bakfile.fid}"
+        #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
+        files = []
+        batch.each do |file|
+          files << BakFile.new(:fid => file.fid,
+                               :domain => file.domain.namespace,
+                               :dkey => file.dkey,
+                               :length => file.length,
+                               :classname => file.classname,
+                               :saved => false)
         end
-        connection = ActiveRecord::Base.connection
-        files = connection.select_values("SELECT t1.fid FROM (#{union}) as t1 LEFT JOIN file on t1.fid = file.fid WHERE file.fid IS NULL")
-        files_to_delete += files
-      }
 
-      launch_delete_workers(files_to_delete)
+        #There is no way to do a bulk insert in sqlite so this generates a lot of inserts.  wrapping all of the inserts
+        #inside a single transaction makes it much much faster.
+        BakFile.transaction do
+          BakFile.import files, :validate => false
+        end
 
+        #Fire up the workers now that we have work for them to do
+        launch_backup_workers(files)
+
+        #Terminate program if the signal handler says so and this is a clean place to do it
+        return true if SignalHandler.instance.should_quit
+      end
+
+      #Delete files from the backup that no longer exist in the mogilefs domain.  Unfortunently there is no easy way to detect
+      #which files have been deleted from the MogileFS domain.  Our only option is to brute force our way through.  This is a bulk
+      #query that checks a thousand files in each query against the MogileFS database server.  The query is kind of tricky because
+      #I wanted to do this with nothing but SELECT privileges which meant I couldn't create a temporary table (which would require,
+      #create temporary table and insert privleges).  You might want to only run this operation every once and awhile if you have a
+      #very large domain.  In my testing,  it is able to get through domains with millions of files in a matter of a second.  So
+      #all in all it's not so bad
+      if !o[:no_delete]
+        files_to_delete = Array.new
+        BakFile.find_in_batches { |bak_files|
+
+          union = "SELECT #{bak_files.first.fid} as fid"
+          bak_files.shift
+          bak_files.each do |bakfile|
+            union = "#{union} UNION SELECT #{bakfile.fid}"
+          end
+          connection = ActiveRecord::Base.connection
+          files = connection.select_values("SELECT t1.fid FROM (#{union}) as t1 LEFT JOIN file on t1.fid = file.fid WHERE file.fid IS NULL")
+          files_to_delete += files
+        }
+
+        launch_delete_workers(files_to_delete)
+      end
+
+      #Break out of infinite loop unless o[:non_stop] is set
+      break unless o[:non_stop]
+      sleep 1
     end
 
   end

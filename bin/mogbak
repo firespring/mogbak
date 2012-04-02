@@ -28,6 +28,9 @@ require 'forkinator'
 require 'path_helper'
 require ('signal_handler')
 
+#activate signal handler
+SignalHandler.instance
+
 
 #Set master process name
 $0 = "mogbak [master]"
@@ -103,6 +106,9 @@ command :backup do |c|
   c.desc 'do not remove deleted files from the backup (faster)'
   c.switch ['no-delete']
 
+  c.desc 'after backup is complete, start another backup. This causes mogbak to run non-stop.  Send SIGINT or SIGTERM to exit'
+  c.switch ['non-stop']
+
   c.desc 'Number of worker processes'
   c.default_value 1
   c.flag :workers
@@ -111,7 +117,7 @@ command :backup do |c|
     raise '[backup_path] is required - see: mogbak help backup' unless args[0]
     $backup_path = args[0]
     mog = Backup.new(:backup_path => args[0], :workers => options[:workers].to_i)
-    mog.backup(:no_delete => options[:"no-delete"])
+    mog.backup(:no_delete => options[:"no-delete"], :non_stop => options[:"non-stop"])
   end
 
 end
