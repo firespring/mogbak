@@ -26,7 +26,8 @@ require 'sqlite3'
 require 'yaml'
 require 'forkinator'
 require 'path_helper'
-require ('signal_handler')
+require 'signal_handler'
+require 'log'
 
 #activate signal handler
 SignalHandler.instance
@@ -106,16 +107,23 @@ command :backup do |c|
   c.desc 'do not remove deleted files from the backup (faster)'
   c.switch ['no-delete']
 
-  c.desc 'after backup is complete, start another backup. This causes mogbak to run non-stop.  Send SIGINT or SIGTERM to exit'
+  c.desc 'after backup is complete, start another backup. This causes mogbak to run non-stop.  Send SIGINT or SIGTERM to exit cleanly'
   c.switch ['non-stop']
 
   c.desc 'Number of worker processes'
   c.default_value 1
   c.flag :workers
 
+  c.desc 'send backup output to log file'
+  c.flag ['log-file']
+
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help backup' unless args[0]
     $backup_path = args[0]
+
+    #setup a logger for output
+    Log.instance(options[:'log-file'])
+
     mog = Backup.new(:backup_path => args[0], :workers => options[:workers].to_i)
     mog.backup(:no_delete => options[:"no-delete"], :non_stop => options[:"non-stop"])
   end
@@ -149,10 +157,16 @@ command :restore do |c|
   c.desc 'restore a single file by dkey'
   c.flag :"single-file"
 
+  c.desc 'send restore output to log file'
+  c.flag ['log-file']
+
   c.action do |global_options, options, args|
     raise 'domain parameter is required - see: mogbak help restore' unless options[:domain]
     raise '[backup_path] is required - see: mogbak help restore' unless args[0]
     $backup_path = args[0]
+
+    #setup a logger for output
+    Log.instance(options[:'log-file'])
 
     restore = Restore.new(:tracker_ip => options[:trackerip],
                           :tracker_port => options[:trackerport],
@@ -169,18 +183,28 @@ Output is: fid,dkey,length,classname
 EOS
 arg_name '[backup_path]'
 command :list do |c|
+
+  c.desc 'send list output to log file'
+  c.flag ['log-file']
+
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help list' unless args[0]
     $backup_path = args[0]
+
+    #setup a logger for output
+    Log.instance(options[:'log-file'])
 
     list = List.new(:backup_path => args[0])
     list.list
   end
 end
 
-#If the user passes in --debug we can detect it here.
+#Handle --debug
 pre do |global_options, command, options, args|
+
+  #This is used to enable some more verbose output
   $debug = global_options[:debug]
+
   true
 end
 

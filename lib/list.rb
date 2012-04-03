@@ -22,7 +22,7 @@ class List
   #fid,key,length,class
   def list
     files = BakFile.find_each(:conditions => ['saved = ?', true]) do |file|
-      puts "#{file.fid},#{file.dkey},#{file.length},#{file.classname}"
+      Log.instance.info("#{file.fid},#{file.dkey},#{file.length},#{file.classname}")
       break if SignalHandler.instance.should_quit
     end
   end

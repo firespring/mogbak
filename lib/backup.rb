@@ -43,9 +43,9 @@ class Backup
   def bak_file(file)
     saved = file.bak_it
     if saved
-      puts "Backed up: FID #{file.fid}"
+       Log.instance.info("Backed up: FID #{file.fid}")
     else
-      puts "Error - will try again on next run: FID #{file.fid}"
+       Log.instance.info("Error - will try again on next run: FID #{file.fid}")
     end
 
     return saved
@@ -102,9 +102,9 @@ class Backup
         break if SignalHandler.instance.should_quit
         deleted = BakFile.delete_from_fs(fid)
         if deleted
-          puts "Deleting from backup: FID #{fid}"
+          Log.instance.info("Deleting from backup: FID #{fid}")
         else
-          puts "Failed to delete from backup: FID #{fid}"
+          Log.instance.info("Failed to delete from backup: FID #{fid}")
         end
 
         result << fid

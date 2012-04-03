@@ -28,9 +28,9 @@ class Restore
 
   def output_save(save, fid)
     if save
-      puts "Restored: FID #{fid}"
+      Log.instance.info("Restored: FID #{fid}")
     else
-      puts "Error: FID #{fid}"
+      Log.instance.info("Error: FID #{fid}")
     end
   end
 
