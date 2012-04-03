@@ -1,0 +1,10 @@
+2012-04-03: Release version 0.2.0
+
+   * Graceful handling of SIGINT and SIGTERM have been added.  Upon receiving, mogbak will finish 
+     the files being transfered and will exit. (Jesse Angell <jesse.angell@firespring.com>)
+     
+   * Backup now has an optional --non-stop switch.  This will cause mogbak to perform backup after backup 
+     without exiting until SIGTERM or SIGINT is received. (Jesse Angell <jesse.angell@firespring.com>)
+
+   * --log-file option added to Restore, List, and Backup.  Optional parameter that will redirect
+     output to a log file.  Works well in conjunction with --non-stop. (Jesse Angell <jesse.angell@firespring.com>)
