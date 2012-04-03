@@ -184,9 +184,8 @@ class Backup
       #very large domain.  In my testing,  it is able to get through domains with millions of files in a matter of a second.  So
       #all in all it's not so bad
       if !o[:no_delete]
-        files_to_delete = Array.new
-        BakFile.find_in_batches { |bak_files|
 
+        BakFile.find_in_batches { |bak_files|
           union = "SELECT #{bak_files.first.fid} as fid"
           bak_files.shift
           bak_files.each do |bakfile|
@@ -194,10 +193,14 @@ class Backup
           end
           connection = ActiveRecord::Base.connection
           files = connection.select_values("SELECT t1.fid FROM (#{union}) as t1 LEFT JOIN file on t1.fid = file.fid WHERE file.fid IS NULL")
-          files_to_delete += files
+          launch_delete_workers(files)
+
+          #Terminate program if the signal handler says so and this is a clean place to do it
+          return true if SignalHandler.instance.should_quit
         }
 
-        launch_delete_workers(files_to_delete)
+
+
       end
 
       #Break out of infinite loop unless o[:non_stop] is set
