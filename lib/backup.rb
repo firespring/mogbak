@@ -184,7 +184,7 @@ class Backup
       #very large domain.  In my testing,  it is able to get through domains with millions of files in a matter of a second.  So
       #all in all it's not so bad
       if !o[:no_delete]
-
+        Log.instance.info("Start: Search for files to delete")
         BakFile.find_in_batches { |bak_files|
           union = "SELECT #{bak_files.first.fid} as fid"
           bak_files.shift
@@ -198,9 +198,7 @@ class Backup
           #Terminate program if the signal handler says so and this is a clean place to do it
           return true if SignalHandler.instance.should_quit
         }
-
-
-
+        Log.instance.info("End: Search for files to delete")
       end
 
       #Break out of infinite loop unless o[:non_stop] is set
