@@ -45,7 +45,7 @@ There are certainly things that could be done about the above issues.  Pull requ
 
 ####Requirements
 
- * Ruby 1.9 is what we test against.  It'll probably work under 1.8 but you'll be a ghiney pig.
+ * Ruby 1.9 is what we test against.  It'll probably work under 1.8 but you'll be a guinea pig.
  * *nix
  * mysql client development libraries (for mysql2 gem dependency)
  * sqlite3 development libraries (for sqlite3 gem dependency)
