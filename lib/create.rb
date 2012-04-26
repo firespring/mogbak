@@ -8,7 +8,7 @@ class Create
   def initialize(o={})
     @db = o[:db] if o[:db]
     @db_host = o[:db_host] if o[:db_host]
-    @db_port = o[:db_port] if o[:db_port]
+    @db_port = Integer(o[:db_port]) if o[:db_port]
     @db_pass = o[:db_pass] if o[:db_pass]
     @db_user = o[:db_user] if o[:db_user]
     @domain = o[:domain] if o[:domain]
