@@ -1,3 +1,7 @@
+2012-04-26: Release version 0.2.1
+
+   * Make the --dbport option work (Ask Bjørn Hansen <ask@develooper.com>)
+
 2012-04-03: Release version 0.2.0
 
    * Graceful handling of SIGINT and SIGTERM have been added.  Upon receiving, mogbak will finish 
