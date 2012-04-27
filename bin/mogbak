@@ -32,10 +32,6 @@ require 'log'
 #activate signal handler
 SignalHandler.instance
 
-
-#Set master process name
-$0 = "mogbak [master]"
-
 include GLI
 program_desc 'Backup a mogilefs domain to the filesystem.  mogbak needs SELECT access to your MogileFS tracker database, which must
 currently be MySQL.'
@@ -87,6 +83,8 @@ command :create do |c|
     raise '--dbpass is required - see: mogbak help creater' unless options[:dbpass]
     raise '[backup_path] is required see mogadm - see: mogbak help create' unless args[0]
     $backup_path = args[0]
+    $0 = "mogbak [master] #{$backup_path}"
+
 
     mog = Create.new(:tracker_ip => options[:trackerip],
                       :tracker_port => options[:trackerport],
@@ -120,6 +118,7 @@ command :backup do |c|
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help backup' unless args[0]
     $backup_path = args[0]
+    $0 = "mogbak [master] #{$backup_path}"
 
     #setup a logger for output
     Log.instance(options[:'log-file'])
@@ -164,6 +163,7 @@ command :restore do |c|
     raise 'domain parameter is required - see: mogbak help restore' unless options[:domain]
     raise '[backup_path] is required - see: mogbak help restore' unless args[0]
     $backup_path = args[0]
+    $0 = "mogbak [master] #{$backup_path}"
 
     #setup a logger for output
     Log.instance(options[:'log-file'])
@@ -190,6 +190,7 @@ command :list do |c|
   c.action do |global_options, options, args|
     raise '[backup_path] is required - see: mogbak help list' unless args[0]
     $backup_path = args[0]
+    $0 = "mogbak [master] #{$backup_path}"
 
     #setup a logger for output
     Log.instance(options[:'log-file'])

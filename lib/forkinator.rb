@@ -39,11 +39,11 @@ class Forkinator
         #done
         while !child_read.eof? do
           #rename the process to make it clear that it's a worker in idle status
-          $0 = "mogbak [idle]"
+          $0 = "mogbak [idle] #{$backup_path}"
           #this call blocks until it receives something from the parent via the pipe
           job = Marshal.load(child_read)
           #since we're working now we'll rename the process
-          $0 = "mogbak [working]"
+          $0 = "mogbak [working] #{$backup_path}"
           #call the child proc
           result = child_proc.call(job)
           #hand the child proc response back to the parent
