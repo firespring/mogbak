@@ -92,7 +92,6 @@ module Validations
   #@param [String] raise_msg exception to raise if we cannot connect. if set to nil no exception will be raised
   #@return [Bool]
   def mogile_tracker_connect(raise_msg = 'Could not connect to MogileFS tracker')
-    ips = @tracker_ip.split(",")
     hosts = @tracker_ip.split(",").map! {|ip| ip + ":#{@tracker_port}" }
     begin
     $mg = MogileFS::MogileFS.new(:domain => @domain, :hosts => hosts)
