@@ -166,7 +166,9 @@ class Backup
         #There is no way to do a bulk insert in sqlite so this generates a lot of inserts.  wrapping all of the inserts
         #inside a single transaction makes it much much faster.
         BakFile.transaction do
-          BakFile.import files, :validate => false
+           files.each do |file|
+              file.save(:validate => false)
+           end
         end
 
         #Fire up the workers now that we have work for them to do

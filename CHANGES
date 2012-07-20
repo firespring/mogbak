@@ -1,3 +1,7 @@
+2012-07-20: Release version 0.2.2
+
+   * Fixed issue that could cause classnames to be set incorrectly if the cluster has multiple domains (Jesse Angell <jesse.angell@firespring.com>)
+
 2012-04-26: Release version 0.2.1
 
    * Make the --dbport option work (Ask Bjørn Hansen <ask@develooper.com>)

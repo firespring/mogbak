@@ -6,7 +6,7 @@ class Fid < ActiveRecord::Base
   belongs_to :domain,
              :foreign_key => "dmid"
   belongs_to :fileclass,
-             :foreign_key => "classid"
+             :foreign_key => [:dmid, :classid]
 
   #If there is no fileclass then it is the default class
   #@return [String] name of class file belongs to

@@ -21,6 +21,7 @@ require 'restore'
 require 'list'
 require 'active_record'
 require 'activerecord-import'
+require 'composite_primary_keys'
 require "mogilefs"
 require 'sqlite3'
 require 'yaml'

@@ -20,5 +20,7 @@ spec = Gem::Specification.new do |s|
   s.add_runtime_dependency('mysql2', '>= 0.3.11')
   s.add_runtime_dependency('mogilefs-client','>= 3.1.1')
   s.add_runtime_dependency('sqlite3','>=1.3.5')
+  s.add_runtime_dependency('activerecord', '>=3.0.3')
   s.add_runtime_dependency('activerecord-import','>=0.2.9')
+  s.add_runtime_dependency('composite_primary_keys', '>= 5.0.8')
 end
