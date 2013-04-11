@@ -19,6 +19,7 @@ class Backup
     @tracker_ip = settings['tracker_ip']
     @tracker_port = settings['tracker_port']
     @workers = o[:workers] if o[:workers]
+    Log.instance.debug("Settings loaded.")
 
 
     #run validations and setup
@@ -54,9 +55,9 @@ class Backup
   #Launch workers to backup an array of BakFiles
   #@param [Array] files must be an array of BakFiles
   def launch_backup_workers(files)
-
     #This proc will process the results of the child proc
     parent = Proc.new { |results|
+      Log.instance.info("Starting backup parent proc...")
       fids = []
 
       results.each do |result|
@@ -66,16 +67,21 @@ class Backup
       end
 
       #bulk update all the fids.  much faster then doing it one at a time
+      Log.instance.debug("Starting bulk update of saved flags for all successfully saved files...")
       BakFile.update_all({:saved => true}, {:fid => fids})
+      Log.instance.debug("Bulk update finished")
 
       #release the connection from the connection pool
       SqliteActiveRecord.clear_active_connections!
+      Log.instance.debug("Released connection")
     }
 
     #This proc receives an array of BakFiles,  proccesses them,  and returns a result array to the parent proc. We will break
     #from the files if the signal handler says so.
     child = Proc.new { |files|
+      Log.instance.info("Starting backup child proc...")
       result = []
+
       files.each do |file|
         break if file.nil?
         break if SignalHandler.instance.should_quit
@@ -86,16 +92,18 @@ class Backup
     }
 
     #launch workers using the above procs and files
+    Log.instance.info("Launching #{self.workers} workers...")
     Forkinator.hybrid_fork(self.workers.to_i, files, parent, child)
+    Log.instance.info("Workers finished.")
   end
 
   #Launch workers to delete an array of files
   #param [Array] files must be an array of BakFiles that need to be deleted
   def launch_delete_workers(fids)
-
     #This proc receives an array of BakFiles, handles them,  and spits them back to the parent, break from the fids if
     #the signal handler says so.
     child = Proc.new { |fids|
+      Log.instance.info("Starting delete child proc...")
       result = []
       fids.each do |fid|
         break if fid.nil?
@@ -114,6 +122,7 @@ class Backup
 
     #This proc will process the results of the child proc
     parent = Proc.new { |results|
+      Log.instance.info("Starting delete parent proc...")
       fids = []
 
       results.each do |result|
@@ -127,8 +136,9 @@ class Backup
     }
 
     #launch workers using the above procs and files
+    Log.instance.info("Launching #{self.workers} workers...")
     Forkinator.hybrid_fork(self.workers.to_i, fids, parent, child)
-
+    Log.instance.info("Workers finished.")
   end
 
   #The real logic for backing the domain up.  It is pretty careful about making sure that it doesn't report a file
@@ -136,40 +146,48 @@ class Backup
   #from the mogilefs mysql server in groups of 500 * number of workers (default is 1 worker)
   #@param [Hash] o if :no_delete then don't remove deleted files from the backup (intensive process)
   def backup(o = {})
-
     #Loop over the main backup logic.  We'll break out at the end unless o[:non_stop] is set
     loop do
+      Log.instance.debug("Beginning main backup loop.")
+      start = Time.now
       files = []
+
       #first we retry files that we haven't been able to backup successfully, if any.
       BakFile.find_each(:conditions => ['saved = ?', false]) do |bak_file|
         files << bak_file
       end
 
-      launch_backup_workers(files)
+      # Retry the backup for failed files
+      if files.length > 0
+        Log.instance.info("Found the following fids which failed to save in the past #{files.join(', ')}")
+        launch_backup_workers(files)
+      else
+        Log.instance.info("No past failed fids found. Continuing.")
+      end
 
       #now back up any new files.  if they fail to be backed up we'll retry them the next time the backup
       #command is ran.
       dmid = Domain.find_by_namespace(self.domain)
-      results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 500 * self.workers.to_i, :include => [:domain, :fileclass]) do |batch|
-
+      max_fid = BakFile.max_fid
+      Log.instance.debug("Searching for files in domain #{dmid} whose fid is larger than #{max_fid}")
+      results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, max_fid], :batch_size => 500 * self.workers.to_i, :include => [:domain, :fileclass]) do |batch|
         #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
-        files = []
-        batch.each do |file|
-          files << BakFile.new(:fid => file.fid,
-                               :domain => file.domain.namespace,
-                               :dkey => file.dkey,
-                               :length => file.length,
-                               :classname => file.classname,
-                               :saved => false)
-        end
-
         #There is no way to do a bulk insert in sqlite so this generates a lot of inserts.  wrapping all of the inserts
         #inside a single transaction makes it much much faster.
+        files = []
         BakFile.transaction do
-           files.each do |file|
-              file.save(:validate => false)
-           end
+          batch.each do |file|
+            files << BakFile.new(
+              :fid => file.fid,
+              :domain => file.domain.namespace,
+              :dkey => file.dkey,
+              :length => file.length,
+              :classname => file.classname,
+              :saved => false)
+            files[-1].save(:validate => false)
+          end
         end
+        Log.instance.debug("Inserted files batch array into sqlite db")
 
         #Fire up the workers now that we have work for them to do
         launch_backup_workers(files)
@@ -203,10 +221,11 @@ class Backup
         Log.instance.info("End: Search for files to delete")
       end
 
+      Log.instance.info("Time elapsed: #{Time.now - start} seconds.")
+
       #Break out of infinite loop unless o[:non_stop] is set
       break unless o[:non_stop]
       sleep 1
     end
-
   end
 end

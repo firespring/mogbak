@@ -49,6 +49,7 @@ class Create
 
     File.open("#{$backup_path}/settings.yml", "w") do |file|
       file.write settings.to_yaml
+      Log.instance.info("Settings written to [ #{$backup_path}/settings.yml ]")
     end
 
     true

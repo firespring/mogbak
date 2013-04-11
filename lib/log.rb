@@ -8,9 +8,9 @@ class Log
   def self.create_logger(log_file)
     log_file = STDOUT if log_file == nil
     logger = Logger.new(log_file)
-    logger.datetime_format = "%Y-%m-%d %H:%M:%S"
+    logger.datetime_format = "%Y-%m-%d %H:%M:%S.%6N"
     logger.formatter = proc do |severity, datetime, progname, msg|
-      "#{datetime}: #{msg}\n"
+      "#{datetime.strftime('%H:%M:%S.%6N')}: #{severity.ljust(6)} #{msg}\n"
     end
     logger
   end
