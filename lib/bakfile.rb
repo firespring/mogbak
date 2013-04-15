@@ -13,7 +13,7 @@ class BakFile < SqliteActiveRecord
     if last_backed_file
       max_fid = last_backed_file.fid
     else
-      max_fid = 141788
+      max_fid = 0
     end
     max_fid
   end

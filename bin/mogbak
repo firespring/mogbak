@@ -216,6 +216,9 @@ long_desc <<EOS
 This function synchronizes a mogile domain with another mogile domain. By default it will only examine the FIDs in the 
 source domain which are new since the last sync. If a full clone is desired specify the 'clone' option which will do a 
 full domain scan so that the domains exactly match when finished.
+
+All source and dest parameters are requred unless a settings file is being used. Command line settings will override 
+values in the settings file if they are valid.
 EOS
 arg_name '[settings_file]'
 command :sync do |c|
@@ -294,7 +297,8 @@ command :sync do |c|
         :dest_db_username => options[:dest_dbuser],
         :dest_db_passwd => options[:dest_dbpass],
         :settings => args.length > 0 ? args[0] : nil)
-#      merge.sync(options[:"mirror"])
+
+      merge.process(options[:"mirror"])
 
     rescue Exception => e
       puts e
