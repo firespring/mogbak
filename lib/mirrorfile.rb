@@ -1,6 +1,7 @@
 require "activerecord-import/base"
 
-#Represents files that are mirrored
+# Represents files that exist in the source mogile domain.
+# This information is updated as we process.
 class MirrorFile < ActiveRecord::Base
   attr_accessor :length, :classname
 

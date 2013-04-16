@@ -2,9 +2,12 @@
 class Mirror
   attr_accessor :source_mogile, :dest_mogile, :start, :added, :updated, :uptodate, :removed, :failures
 
+  BYTE_RANGE = %W(TiB GiB MiB KiB B).freeze
+  TIME_RANGE = [[60, :seconds], [60, :minutes], [24, :hours], [1000, :days]].freeze
+
   # Run validations and prepare the object for a backup
   #
-  # @param [Hash] o hash containing any settings for the mirror
+  # @param [Hash] cli_settings A hash containing any settings for the mirror
   def initialize(cli_settings={})
     require('sourcedomain')
     require('sourcefile')
@@ -30,7 +33,7 @@ class Mirror
     settings = load_settings(settings_path)
 
     # Next merge in all properties from the command line (this way a user can override a specific setting if they want to.)
-    merge_cli_settings(settings, cli_settings)
+    merge_cli_settings!(settings, cli_settings)
 
     # Verify mysql settings
     # This will map everything to the dest db connection by default
@@ -77,9 +80,15 @@ class Mirror
     # Save settings
     save_settings(settings_path, settings)
 
+    # Set logging level to info unless --debug has been specified.
     Log.instance.level = Logger::INFO unless $debug
   end
 
+  # Parse the file as a yaml config file and return a map of it's settings
+  #
+  # @param [String] filename The filename of the file to parse
+  #
+  # @return [Map] The map of settings found in the file
   def load_settings(filename)
     require('yaml')
 
@@ -94,7 +103,13 @@ class Mirror
     settings
   end
 
-  def merge_cli_settings(settings, cli_settings)
+  # Merges settings from the command line with settings from the configuration file.
+  # This allows a user to use a settings file for the defaults but override settings by using
+  # command line options. The settings map will contain the merged properties
+  #
+  # @param [Map] settings The default settings which were parsed from the configuration file
+  # @param [Map] cli_settings The override settings which were parsed from the command line
+  def merge_cli_settings!(settings, cli_settings)
     # Override any settings we passed in on the command line
     settings[:source] ||= {}
     settings[:source][:db] =           cli_settings[:source_db]           if cli_settings[:source_db]
@@ -117,8 +132,11 @@ class Mirror
     settings[:dest][:tracker_port] = cli_settings[:dest_tracker_port] if cli_settings[:dest_tracker_port]
   end
 
-  #Save the settings for the backup into a yaml file (settings.yaml) so that an incremental can be ran without so many parameters
-  #@return [Bool] true or false
+  # Save the settings for the backup into a yaml file (settings.yaml) so that
+  # additional mirrors can be ran without so many parameters
+  #
+  # @param [String] filename The filename of the file to parse
+  # @param [Map] settings The map of settings to write to the file
   def save_settings(filename, settings)
     require 'yaml'
 
@@ -126,22 +144,19 @@ class Mirror
       file.write(settings.to_yaml)
       Log.instance.info("Settings written to [ #{filename} ]")
     end
-
-    true
   end
 
   # Establish a connection to a mysql database
-  # @param [Class] klass
-  # @param [String] host
-  # @param [String] port
-  # @param [String] user
-  # @param [String] passwd
-  # @param [String] schema
-  # @param [String] adapter (optional)
-  # @param [String] reconnect (optional)
+  #
+  # @param [Class] klass The class to bind the connection to
+  # @param [String] host The database host
+  # @param [String] port The database port
+  # @param [String] username The database user
+  # @param [String] passwd The database password
+  # @param [String] schema The database schema
+  # @param [String] adapter The database adapter to use (defaults to mysql2)
+  # @param [String] reconnect Whether or not to reconnect (defaults to true)
   def establish_connection(klass, host, port, username, passwd, schema,adapter='mysql2', reconnect=true)
-    connection = nil
-
     #Verify that we can connect to the mogilefs mysql server
     begin
       pool = klass.establish_connection({
@@ -154,20 +169,22 @@ class Mirror
         :reconnect => reconnect})
 
       # Connections don't seem to actually be verified as valid until '.connection' is called.
-      connection = pool.connection
+      pool.connection
       Log.instance.info("Connected class [ #{klass} ] to mysql database [ #{username}@#{host}/#{schema} ].")
 
     rescue Exception => e
       Log.instance.error("Could not connect to MySQL database: #{e}\n#{e.backtrace}")
       raise 'Could not connect to MySQL database'
     end
-
-    connection
   end
 
-  # Connect to mogile tracker
-  # @param [String] ip 
-  # @param [String] port 
+  # Establish a connection to mogile tracker
+  #
+  # @param [String] ip The IP of the mogile tracker
+  # @param [String] port The port of the mogile tracker
+  # @param [String] domain The domain to connect to
+  #
+  # @return [MogileFS] The instantiated mogilefs instance
   def mogile_tracker_connect(ip, port, domain)
     hosts = ["#{ip}:#{port}"]
 
@@ -188,26 +205,31 @@ class Mirror
     mogile
   end
 
-  def mirror(incremental)
-    # Clear out data from previous runs unless we are doing a full mirror
-    unless incremental
-      ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{MirrorFile.table_name}")
+  # The main processing method for the Mirror class. Processes all necesary information based on
+  # user inputs and prints a summary
+  #
+  # @param [Boolean] incremental Whether the program should perform an incremental mirror or not (defaults to false)
+  def mirror(incremental=false)
+    begin
+      # Clear out data from previous runs unless we are doing a full mirror
+      ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{MirrorFile.table_name}") unless incremental
+
+      # Scan all files greater than max_fid in the source mogile database and copy over any
+      # which are missing from the dest mogile database.
+      mirror_missing_destination_files unless SignalHandler.instance.should_quit
+
+      # This is only run when incremental is not set because it requires the mirror_files db to express
+      # exactly the same state as the remote mogile db. Otherwise this would effectively do nothing.
+      remove_superfluous_destination_files unless incremental or SignalHandler.instance.should_quit
+
+    ensure
+      # Print the overall summary
+      final_summary
     end
-
-    # Scan all files greater than max_fid in the source mogile database and copy over any
-    # which are missing from the dest mogile database.
-    mirror_missing_local_files
-
-    # This is only run when incremental is not set because it requires the mirror_files db to express
-    # exactly the same state as the remote mogile db. Otherwise this would effectively do nothing.
-    unless incremental
-      remove_superfluous_local_files
-    end
-
-    final_summary
   end
 
-  def mirror_missing_local_files()
+  # Mirror all files from the source mogile which do not exist in the destination mogile
+  def mirror_missing_destination_files()
     # Find the id of the domain we are mirroring
     source_domain = SourceDomain.find_by_namespace(@source_mogile.domain)
 
@@ -216,7 +238,6 @@ class Mirror
     max_fid = MirrorFile.max_fid
 
     # Process source files in batches.
-    # TODO: error handling for find_in_batches?
     Log.instance.info("Searching for files in domain #{source_domain.namespace} whose fid is larger than #{max_fid}")
     SourceFile.find_in_batches(
       :conditions => ['dmid = ? AND fid > ?', source_domain.dmid, max_fid],
@@ -224,17 +245,15 @@ class Mirror
       :include => [:domain, :fileclass]) do |batch|
 
       # Create an array of MirrorFiles which represents files we have mirrored.
-      remotefiles = batch.collect do |file|
-        MirrorFile.new(:fid => file.fid, :dkey => file.dkey, :length => file.length, :classname => file.classname)
-      end
+      remotefiles = batch.collect {|file| MirrorFile.new(:fid => file.fid, :dkey => file.dkey, :length => file.length, :classname => file.classname)}
 
-      # TODO: More error handling here?
+      # Insert the mirror files in a batch format.
       Log.instance.debug("Bulk inserting mirror files.")
       MirrorFile.import remotefiles
 
       # Figure out which files need copied over
       # (either because they are missing or because they have been updated)
-      batch_copy_missing_local_files(remotefiles)
+      batch_copy_missing_destination_files(remotefiles)
 
       # Show our progress so people know we are working
       summarize
@@ -244,7 +263,11 @@ class Mirror
     end
   end
 
-  def batch_copy_missing_local_files(files)
+  # Process a batch of files determining if the file is missing or out of date.
+  # If either is true, stream the file into the destination mogile.
+  #
+  # params [List] files List of files to process
+  def batch_copy_missing_destination_files(files)
     dest_domain = DestDomain.find_by_namespace(@dest_mogile.domain)
 
     files.each do |file|
@@ -289,6 +312,9 @@ class Mirror
     end
   end
 
+  # Opens a pipe between the two mogile instances and funnels the file from the source to the destination.
+  # 
+  # @param [SourceFile] file The file to be copied
   def stream_copy(file)
     # Create a pipe to link the get / store commands
     read_pipe, write_pipe = IO.pipe
@@ -315,11 +341,12 @@ class Mirror
     end
   end
 
-  def remove_superfluous_local_files()
+  # Removes all files in the destination which are not in the source. This is done by comparing the
+  # files in the destination with the table of files we have mirrored from source.
+  def remove_superfluous_destination_files()
     # join mirror_file and dest_file and delete everything from dest_file which isn't in mirror_file
     # because mirror_file should represent the current state of the source mogile files
-    # TODO: error handling for find_in_batches?
-    Log.instance.info("Joining local tables to determine files that have been deleted from source repo.")
+    Log.instance.info("Joining destination and mirror tables to determine files that have been deleted from source repo.")
     DestFile.find_in_batches(
       :joins => 'LEFT OUTER JOIN mirror_file ON mirror_file.dkey = file.dkey',
       :conditions => 'mirror_file.dkey IS NULL',
@@ -349,10 +376,12 @@ class Mirror
     end
   end
 
+  # Uses instance level variables to log a summary of files processed
   def summarize
     Log.instance.info "Summary => Execution time: #{as_time_elapsed(Time.now - @start)}, Up To Date: #{@uptodate}, Failures: #{@failed}, Added: #{@added}, Updated: #{@updated}, Bytes Transferred: #{as_byte_size(@copied_bytes)}, Removed: #{@removed}, Bytes Freed #{as_byte_size(@freed_bytes)}"
   end
 
+  # Prints a more complete, better formatted summary of files processed during the current execution of a mirror
   def final_summary
     puts
     puts <<-eos
@@ -376,7 +405,7 @@ class Mirror
     STDOUT.flush
   end
 
-  BYTE_RANGE = %W(TiB GiB MiB KiB B).freeze
+  # Helper method to print out the number of bytes in a more readible format
   def as_byte_size(bytes)
     bytes = bytes.to_f
     i = BYTE_RANGE.length - 1
@@ -387,7 +416,7 @@ class Mirror
     ((bytes > 9 || bytes.modulo(1) < 0.1 ? '%d' : '%.1f') % bytes) + ' ' + BYTE_RANGE[i]
   end
 
-  TIME_RANGE = [[60, :seconds], [60, :minutes], [24, :hours], [1000, :days]].freeze
+  # Helper method to print out the number of seconds of time elapsed in a more readible format
   def as_time_elapsed(secs)
     TIME_RANGE.map{ |count, name|
       if secs > 0
