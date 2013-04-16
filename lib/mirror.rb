@@ -2,8 +2,9 @@
 class Mirror
   attr_accessor :source_mogile, :dest_mogile, :start, :added, :updated, :uptodate, :removed, :failures
 
-  # TODO:
-  #@param [Hash] o hash containing any settings for the mirror
+  # Run validations and prepare the object for a backup
+  #
+  # @param [Hash] o hash containing any settings for the mirror
   def initialize(cli_settings={})
     require('sourcedomain')
     require('sourcefile')
@@ -13,12 +14,13 @@ class Mirror
     require('mirrorfile')
 
     @start = Time.now
+    @uptodate = 0
     @added = 0
     @updated = 0
-    @uptodate = 0
+    @copied_bytes = 0
     @removed = 0
-    @failures = 0
-    @bytes = 0
+    @freed_bytes = 0
+    @failed = 0
 
     # If a settings file was given, use it. Otherwise default one.
     settings_path = cli_settings[:settings]
@@ -75,7 +77,7 @@ class Mirror
     # Save settings
     save_settings(settings_path, settings)
 
-    Log.instance.level = Logger::INFO
+    Log.instance.level = Logger::INFO unless $debug
   end
 
   def load_settings(filename)
@@ -186,241 +188,217 @@ class Mirror
     mogile
   end
 
-  def process(incremental)
+  def mirror(incremental)
     # Clear out data from previous runs unless we are doing a full mirror
-    ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{MirrorFile.table_name}") unless incremental
-
-    # Find the id of the domain we are mirroring
-    source_dmid = SourceDomain.find_by_namespace(@source_mogile.domain)
-
-    # Get the largest fid in the mirror db
-    max_fid = MirrorFile.max_fid
-
-    Log.instance.debug("Searching for files in domain #{source_dmid} whose fid is larger than #{max_fid}")
-    SourceFile.find_in_batches(
-      :conditions => ['dmid = ? AND fid > ?', source_dmid, max_fid],
-      :batch_size => 1000,
-      :include => [:domain, :fileclass]) do |batch|
-
-      # Create an array of MirrorFiles which represents files we have mirrored.
-      remotefiles = []
-      remotefiles = batch.each do |file|
-        remotefiles << MirrorFile.new(
-          :fid => file.fid,
-          :length => file.length,
-          :classname => file.classname)
-
-        # Have to set the primary key outside of the init
-        remotefiles[-1].dkey = file.dkey
-      end
-      Log.instance.debug("Bulk inserting files.")
-      MirrorFile.import remotefiles
-
-      # Figure out which files need copied over
-      # (either because they are missing or because they have been updated)
-      files_to_stream = evaluate_missing_local_files(remotefiles)
-
-      if files_to_stream.any?
-        # More than 1 workers appears to either break the pipe or something in mogile.
-        num_workers = 1
-        Log.instance.info("Launching #{num_workers} workers to process #{files_to_stream.length} insert jobs...")
-        do_batch(num_workers, files_to_stream, Proc.new { |data|
-          Log.instance.info("Starting child processing to stream missing files...")
-          result = []
-
-          data.each do |file|
-            break if file.nil?
-            break if SignalHandler.instance.should_quit
-            result << DestFile.stream(file, @source_mogile, @dest_mogile)
-            @bytes += file.length
-          end
-          result
-        })
-        Log.instance.info("Workers finished.")
-      end
-
-      summarize
+    unless incremental
+      ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{MirrorFile.table_name}")
     end
 
-    if false
-#    unless incremental
-      # join mirror_file and dest_file and delete everything from dest_file which isn't in mirror_file
-      # because mirror_file represents the current state of the source mogile files
-      DestFile.find_in_batches(
-        :joins => 'LEFT OUTER JOIN mirror_file ON mirror_file.dkey = file.dkey',
-        :conditions => 'mirror_file.dkey IS NULL',
-        :batch_size => 1000) do |batch|
+    # Scan all files greater than max_fid in the source mogile database and copy over any
+    # which are missing from the dest mogile database.
+    mirror_missing_local_files
 
-        # More than 1 workers appears to either break the pipe or something in mogile.
-        num_workers = 1
-        Log.instance.info("Launching #{num_workers} workers to process #{files_to_stream.length} insert jobs...")
-        do_batch(num_workers, files_to_stream, Proc.new { |data|
-          Log.instance.info("Starting child processing to stream missing files...")
-          result = []
-
-          data.each do |file|
-            break if file.nil?
-            break if SignalHandler.instance.should_quit
-            result << DestFile.stream(file, @source_mogile, @dest_mogile)
-          end
-          result
-        })
-        Log.instance.info("Workers finished.")
-      end
+    # This is only run when incremental is not set because it requires the mirror_files db to express
+    # exactly the same state as the remote mogile db. Otherwise this would effectively do nothing.
+    unless incremental
+      remove_superfluous_local_files
     end
 
     final_summary
   end
 
-  def evaluate_missing_local_files(files)
-    dest_dmid = DestDomain.find_by_namespace(@dest_mogile.domain)
+  def mirror_missing_local_files()
+    # Find the id of the domain we are mirroring
+    source_domain = SourceDomain.find_by_namespace(@source_mogile.domain)
 
-    files_to_copy = []
+    # Get the max fid from the mirror db
+    # This will only be nonzero if we are doing an incremental
+    max_fid = MirrorFile.max_fid
+
+    # Process source files in batches.
+    # TODO: error handling for find_in_batches?
+    Log.instance.info("Searching for files in domain #{source_domain.namespace} whose fid is larger than #{max_fid}")
+    SourceFile.find_in_batches(
+      :conditions => ['dmid = ? AND fid > ?', source_domain.dmid, max_fid],
+      :batch_size => 1000,
+      :include => [:domain, :fileclass]) do |batch|
+
+      # Create an array of MirrorFiles which represents files we have mirrored.
+      remotefiles = batch.collect do |file|
+        MirrorFile.new(:fid => file.fid, :dkey => file.dkey, :length => file.length, :classname => file.classname)
+      end
+
+      # TODO: More error handling here?
+      Log.instance.debug("Bulk inserting mirror files.")
+      MirrorFile.import remotefiles
+
+      # Figure out which files need copied over
+      # (either because they are missing or because they have been updated)
+      batch_copy_missing_local_files(remotefiles)
+
+      # Show our progress so people know we are working
+      summarize
+
+      # Quit if program exit has been requested.
+      return true if SignalHandler.instance.should_quit
+    end
+  end
+
+  def batch_copy_missing_local_files(files)
+    dest_domain = DestDomain.find_by_namespace(@dest_mogile.domain)
+
     files.each do |file|
+      # Quit if no results
       break if file.nil?
+
+      # Quit if program exit has been requested.
       break if SignalHandler.instance.should_quit
 
-      destfile = DestFile.find_by_dkey_and_dmid(file.dkey, dest_dmid)
+      # Look up the source file's key in the destination domain
+      destfile = DestFile.find_by_dkey_and_dmid(file.dkey, dest_domain.dmid)
       if destfile
         # File exists!
         # Check that the source and dest file sizes match
         if file.length != destfile.length
-          files_to_copy << file
-          @updated += 1
-          Log.instance.info("key #{file.dkey} is out of date... updating.")
-#          DestFile.stream(file, @source_mogile, @dest_mogile)
-
+          # File exists but has been modified. Copy it over.
+          begin
+            Log.instance.debug("key #{file.dkey} is out of date... updating.")
+            stream_copy(file)
+            @updated += 1
+            @copied_bytes += file.length
+          rescue Exception => e
+            @failed += 1
+            Log.instance.error("Error updating [ #{file.dkey} ]: #{e.message}")
+          end
         else
-          @uptodate += 1
           Log.instance.debug("key #{file.dkey} is up to date.")
-
+          @uptodate += 1
         end
       else
         # File does not exist. Copy it over.
-        files_to_copy << file
-        @added += 1
-        Log.instance.info("key #{file.dkey} does not exist... creating.")
-#        DestFile.stream(file, @source_mogile, @dest_mogile)
-      end
-    end
-    files_to_copy
-  end
-
-  def do_batch(num_workers, job_info, proc_code)
-    result = []
-    threads = []
-
-    #mutex is used to ensure that some operations in the threads don't have the potential of happening at the same time
-    #in another thread
-    semaphore = Mutex.new
-
-    require('thread')
-
-    #split the jobs up
-    jobs = job_info.in_groups(num_workers)
-
-    #spawn the children
-    children = []
-    num_workers.times { children << make_child(proc_code)}
-
-    #For each worker
-    num_workers.times do |i|
-
-      #start a thread
-      threads[i] = Thread.new do
-        Thread.current.abort_on_exception = true
-
-        child = {}
-        semaphore.synchronize { child = children.pop }
-
-        pid = child[:pid]
-        njobs = jobs[i - 1]
-
-        #pass jobs to child
-        Marshal.dump(njobs, child[:write])
-
-        #wait for child's result
-        result.push(*Marshal.load(child[:read]))
-
-        #close the pipe
-        child[:write].close
-
-        #wait for process to finish before terminating this thread
-        Process.wait(pid)
-      end
-    end
-
-    threads.compact.each do |t|
-      begin
-        t.join
-      rescue Interrupt
-        # no reason to wait on dead threads
-      end
-    end
-  end
-
-  def make_child(child_proc)
-
-    #open pipes for two way communication between the parent and child
-    child_read, parent_write = IO.pipe
-    parent_read, child_write = IO.pipe
-
-    #fork, code inside this block is only ran inside the child
-    pid = Process.fork do
-      begin
-
-        #Since we're the child now,  we'll close the parent's r/w pipes as we don't need them
-        parent_write.close
-        parent_read.close
-
-        #child loops through IO pipe,  listening for data from the parent,  if the parent closes the pipe then we're
-        #done
-        while !child_read.eof? do
-          #rename the process to make it clear that it's a worker in idle status
-          $0 = "mogbak [idle]"
-          #this call blocks until it receives something from the parent via the pipe
-          job = Marshal.load(child_read)
-          #since we're working now we'll rename the process
-          $0 = "mogbak [working]"
-          #call the child proc
-          result = child_proc.call(job)
-          #hand the child proc response back to the parent
-          Marshal.dump(result, child_write)
+        begin
+          Log.instance.debug("key #{file.dkey} does not exist... creating.")
+          stream_copy(file)
+          @added += 1
+          @copied_bytes += file.length
+        rescue Exception => e
+          @failed += 1
+          Log.instance.error("Error adding [ #{file.dkey} ]: #{e.message}")
         end
-
-      #no matter what happens..make sure we get the pipes closed
-      ensure
-        child_read.close
-        child_write.close
       end
     end
+  end
 
-    #close the child's handle on the pipes since the parent won't need them
-    child_read.close
-    child_write.close
+  def stream_copy(file)
+    # Create a pipe to link the get / store commands
+    read_pipe, write_pipe = IO.pipe
 
-    {:write => parent_write, :read => parent_read, :pid => pid}
+    # Fork a child process to write to the pipe
+    childpid = Process.fork do
+      read_pipe.close
+      @source_mogile.get_file_data(file.dkey, dst=write_pipe)
+      write_pipe.close
+    end
+
+    # Read info off the pipe that the child is writing to
+    write_pipe.close
+    @dest_mogile.store_file(file.dkey, file.classname, read_pipe)
+    read_pipe.close
+
+    # Wait for the child to exit
+    Process.wait
+
+    # Throw an exception if the child process exited non-zero
+    if $?.exitstatus != 0
+      Log.instance.error("Child exited with a status of #{$?.exitstatus}.")
+      raise "Error getting file data from [ #{@source_mogile.domain} ]"
+    end
+  end
+
+  def remove_superfluous_local_files()
+    # join mirror_file and dest_file and delete everything from dest_file which isn't in mirror_file
+    # because mirror_file should represent the current state of the source mogile files
+    # TODO: error handling for find_in_batches?
+    Log.instance.info("Joining local tables to determine files that have been deleted from source repo.")
+    DestFile.find_in_batches(
+      :joins => 'LEFT OUTER JOIN mirror_file ON mirror_file.dkey = file.dkey',
+      :conditions => 'mirror_file.dkey IS NULL',
+      :batch_size => 1000) do |batch|
+
+      batch.each do |file|
+        # Quit if program exit has been requested.
+        break if SignalHandler.instance.should_quit
+
+        # Delete all files from our destination domain which no longer exist in the source domain.
+        begin
+          Log.instance.debug("key #{file.dkey} should not exist. Deleting.")
+          @dest_mogile.delete(file.dkey)
+          @removed += 1
+          @freed_bytes += file.length
+        rescue Exception => e
+          @failed += 1
+          Log.instance.error("Error deleting [ #{file.dkey} ]: #{e.message}")
+        end
+      end
+
+      # Print a summary to the user.
+      summarize
+
+      # Quit if program exit has been requested.
+      return true if SignalHandler.instance.should_quit
+    end
   end
 
   def summarize
-    Log.instance.info "Summary => Execution time: #{Time.now - @start}, Added: #{@added}, Updated: #{@updated}, Bytes: #{String.as_size(@bytes), Up To Date: #{@uptodate}, Removed: #{@Removed}"
+    Log.instance.info "Summary => Execution time: #{as_time_elapsed(Time.now - @start)}, Up To Date: #{@uptodate}, Failures: #{@failed}, Added: #{@added}, Updated: #{@updated}, Bytes Transferred: #{as_byte_size(@copied_bytes)}, Removed: #{@removed}, Bytes Freed #{as_byte_size(@freed_bytes)}"
   end
 
   def final_summary
-    # TODO: test bytes transferred, keep track of space freed.
     puts
     puts <<-eos
     --------------------------------------------------------------------------
-      Final Summary:
-         Execution time: #{Time.now - @start}
+      Complete Summary:
+         Execution time: #{as_time_elapsed(Time.now - @start)}
+
+         Up To Date: #{@uptodate}
+
+         Failures: #{@failed}
+
          Added: #{@added}
          Updated: #{@updated}
-         Bytes transferred: #{String.as_size(@bytes)}
-         Up To Date: #{@uptodate}
-         Removed: #{@Removed}
+         Bytes copied: #{as_byte_size(@copied_bytes)}
+
+         Removed: #{@removed}
+         Bytes freed: #{as_byte_size(@freed_bytes)}
     --------------------------------------------------------------------------
     eos
     puts
     STDOUT.flush
+  end
+
+  BYTE_RANGE = %W(TiB GiB MiB KiB B).freeze
+  def as_byte_size(bytes)
+    bytes = bytes.to_f
+    i = BYTE_RANGE.length - 1
+    while bytes > 512 && i > 0
+      i -= 1
+      bytes /= 1024
+    end
+    ((bytes > 9 || bytes.modulo(1) < 0.1 ? '%d' : '%.1f') % bytes) + ' ' + BYTE_RANGE[i]
+  end
+
+  TIME_RANGE = [[60, :seconds], [60, :minutes], [24, :hours], [1000, :days]].freeze
+  def as_time_elapsed(secs)
+    TIME_RANGE.map{ |count, name|
+      if secs > 0
+        secs, n = secs.divmod(count)
+        if name == :seconds
+          n = n.round(4)
+        else
+          n = n.to_i
+        end
+        "#{n} #{name}"
+      end
+    }.compact.reverse.join(' ')
   end
 end

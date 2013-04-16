@@ -202,18 +202,9 @@ command :list do |c|
   end
 end
 
-#Handle --debug
-pre do |global_options, command, options, args|
-
-  #This is used to enable some more verbose output
-  $debug = global_options[:debug]
-
-  true
-end
-
 desc 'Mirrors a MogileFS domain to another MogileFS domain.'
-long_desc <<EOS
-This function mirrors a mogile domain with another mogile domain. By default it will scan the entire source domain and
+long_desc <<-eos
+By default this function will scan the entire source domain and
 compares each file to the destination domain, verifying that the key exists and the file sizes match. If either is not
 the case, it will stream the file from the source domain to the destination domain. When all of this is finished, the 
 destination domain will be joined with the files we copied and any extra files in the destination domain will be deleted.
@@ -222,8 +213,9 @@ If 'incremental' is specified, then the scan of the source domain will begin at 
 will then continue as before with the exception of the deletion logic which will be skipped.
 
 All source and dest parameters are requred unless a settings file is being used. Command line settings will override 
-values in the settings file if they are valid.
-EOS
+values in the settings file if they are valid. Settings are saved to mirror.settings.yml by default but an alternate
+configuration file may be specified.
+eos
 arg_name '[settings_file]'
 command :mirror do |c|
 
@@ -302,13 +294,22 @@ command :mirror do |c|
         :dest_db_passwd => options[:dest_dbpass],
         :settings => args.length > 0 ? args[0] : nil)
 
-      mirror.process(options[:"mirror"])
+      mirror.mirror(options[:incremental])
 
     rescue Exception => e
       puts e
       puts e.backtrace
     end
   end
+end
+
+#Handle --debug
+pre do |global_options, command, options, args|
+
+  #This is used to enable some more verbose output
+  $debug = global_options[:debug]
+
+  true
 end
 
 #If debug is enabled we'll spit out the exception and the entire backtrace.  Otherwise it will just output

@@ -6,6 +6,6 @@ class CreateMirrorSchema < ActiveRecord::Migration
       t.integer :fid, :null => false
     end
 
-    add_index :mirror_file, :dkey
+    add_index :mirror_file, :dkey, :unique => true
   end
 end
