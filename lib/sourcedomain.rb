@@ -1,4 +1,3 @@
 require 'domain'
 
-class SourceDomain < Domain
-end
+class SourceDomain < Domain; end

@@ -1,4 +1,3 @@
 require 'file'
 
-class SourceFile < Fid
-end
+class SourceFile < Fid; end

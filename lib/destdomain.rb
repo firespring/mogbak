@@ -1,4 +1,3 @@
 require 'domain'
 
-class DestDomain < Domain
-end
+class DestDomain < Domain; end

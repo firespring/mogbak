@@ -1,9 +1,9 @@
-# Merges a mogile domain with another mogile domain
-class Merge
-  attr_accessor :source_mogile, :dest_mogile, :added, :updated, :uptodate, :removed, :failures
+# Mirrors a mogile domain to another mogile domain
+class Mirror
+  attr_accessor :source_mogile, :dest_mogile, :start, :added, :updated, :uptodate, :removed, :failures
 
   # TODO:
-  #@param [Hash] o hash containing any settings for the merge
+  #@param [Hash] o hash containing any settings for the mirror
   def initialize(cli_settings={})
     require('sourcedomain')
     require('sourcefile')
@@ -18,6 +18,7 @@ class Merge
     @uptodate = 0
     @removed = 0
     @failures = 0
+    @bytes = 0
 
     # If a settings file was given, use it. Otherwise default one.
     settings_path = cli_settings[:settings]
@@ -74,7 +75,7 @@ class Merge
     # Save settings
     save_settings(settings_path, settings)
 
-#    Log.instance.level = Logger::INFO
+    Log.instance.level = Logger::INFO
   end
 
   def load_settings(filename)
@@ -185,26 +186,25 @@ class Merge
     mogile
   end
 
-  def process(mirror)
-    # Clear out data from previous runs if we are doing a full mirror
-    ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{MirrorFile.table_name}") if mirror
+  def process(incremental)
+    # Clear out data from previous runs unless we are doing a full mirror
+    ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{MirrorFile.table_name}") unless incremental
 
     # Find the id of the domain we are mirroring
     source_dmid = SourceDomain.find_by_namespace(@source_mogile.domain)
 
-    # TODO: Figure out if we can get rid of the FID constraint
-#    max_fid = 141795
-#    max_fid = 205425
-#    max_fid = 236605
+    # Get the largest fid in the mirror db
     max_fid = MirrorFile.max_fid
 
     Log.instance.debug("Searching for files in domain #{source_dmid} whose fid is larger than #{max_fid}")
-    SourceFile.find_in_batches(:conditions => ['dmid = ? AND fid > ?', source_dmid, max_fid], :batch_size => 10, :include => [:domain, :fileclass]) do |batch|
-      #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
-      #There is no way to do a bulk insert in sqlite so this generates a lot of inserts.  wrapping all of the inserts
-      #inside a single transaction makes it much much faster.
+    SourceFile.find_in_batches(
+      :conditions => ['dmid = ? AND fid > ?', source_dmid, max_fid],
+      :batch_size => 1000,
+      :include => [:domain, :fileclass]) do |batch|
+
+      # Create an array of MirrorFiles which represents files we have mirrored.
       remotefiles = []
-      batch.each do |file|
+      remotefiles = batch.each do |file|
         remotefiles << MirrorFile.new(
           :fid => file.fid,
           :length => file.length,
@@ -221,9 +221,39 @@ class Merge
       files_to_stream = evaluate_missing_local_files(remotefiles)
 
       if files_to_stream.any?
-        # Use between 1 and 5 workers, make sure each has at least 10 things to do.
-        num_workers = [1, [5, (files_to_stream.length/10).to_i].min].max
-        Log.instance.info("Launching #{num_workers} workers to process #{files_to_stream.length} jobs...")
+        # More than 1 workers appears to either break the pipe or something in mogile.
+        num_workers = 1
+        Log.instance.info("Launching #{num_workers} workers to process #{files_to_stream.length} insert jobs...")
+        do_batch(num_workers, files_to_stream, Proc.new { |data|
+          Log.instance.info("Starting child processing to stream missing files...")
+          result = []
+
+          data.each do |file|
+            break if file.nil?
+            break if SignalHandler.instance.should_quit
+            result << DestFile.stream(file, @source_mogile, @dest_mogile)
+            @bytes += file.length
+          end
+          result
+        })
+        Log.instance.info("Workers finished.")
+      end
+
+      summarize
+    end
+
+    if false
+#    unless incremental
+      # join mirror_file and dest_file and delete everything from dest_file which isn't in mirror_file
+      # because mirror_file represents the current state of the source mogile files
+      DestFile.find_in_batches(
+        :joins => 'LEFT OUTER JOIN mirror_file ON mirror_file.dkey = file.dkey',
+        :conditions => 'mirror_file.dkey IS NULL',
+        :batch_size => 1000) do |batch|
+
+        # More than 1 workers appears to either break the pipe or something in mogile.
+        num_workers = 1
+        Log.instance.info("Launching #{num_workers} workers to process #{files_to_stream.length} insert jobs...")
         do_batch(num_workers, files_to_stream, Proc.new { |data|
           Log.instance.info("Starting child processing to stream missing files...")
           result = []
@@ -237,15 +267,8 @@ class Merge
         })
         Log.instance.info("Workers finished.")
       end
-
-      summarize
     end
 
-      # TODO: join mirror_file and dest_file and delete everything from dest_file which isn't in mirror_file
-#      SELECT file.dkey from file
-#      LEFT OUTER JOIN mirror_file
-#        ON (file.dkey=mirror_file.dkey) 
-#      WHERE mirror_file.dkey IS NULL
     final_summary
   end
 
@@ -380,10 +403,11 @@ class Merge
   end
 
   def summarize
-    Log.instance.info "Summary => Execution time: #{Time.now - @start}, Added: #{@added}, Updated: #{@updated}, Up To Date: #{@uptodate}, Removed: #{@Removed}"
+    Log.instance.info "Summary => Execution time: #{Time.now - @start}, Added: #{@added}, Updated: #{@updated}, Bytes: #{String.as_size(@bytes), Up To Date: #{@uptodate}, Removed: #{@Removed}"
   end
 
   def final_summary
+    # TODO: test bytes transferred, keep track of space freed.
     puts
     puts <<-eos
     --------------------------------------------------------------------------
@@ -391,6 +415,7 @@ class Merge
          Execution time: #{Time.now - @start}
          Added: #{@added}
          Updated: #{@updated}
+         Bytes transferred: #{String.as_size(@bytes)}
          Up To Date: #{@uptodate}
          Removed: #{@Removed}
     --------------------------------------------------------------------------

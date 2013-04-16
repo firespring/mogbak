@@ -19,7 +19,7 @@ require 'create'
 require 'backup'
 require 'restore'
 require 'list'
-require 'merge'
+require 'mirror'
 require 'active_record'
 require 'activerecord-import'
 require 'composite_primary_keys'
@@ -211,20 +211,24 @@ pre do |global_options, command, options, args|
   true
 end
 
-desc 'Synchronize a MogileFS domain with another MogileFS domain.'
+desc 'Mirrors a MogileFS domain to another MogileFS domain.'
 long_desc <<EOS
-This function synchronizes a mogile domain with another mogile domain. By default it will only examine the FIDs in the 
-source domain which are new since the last sync. If a full clone is desired specify the 'clone' option which will do a 
-full domain scan so that the domains exactly match when finished.
+This function mirrors a mogile domain with another mogile domain. By default it will scan the entire source domain and
+compares each file to the destination domain, verifying that the key exists and the file sizes match. If either is not
+the case, it will stream the file from the source domain to the destination domain. When all of this is finished, the 
+destination domain will be joined with the files we copied and any extra files in the destination domain will be deleted.
+
+If 'incremental' is specified, then the scan of the source domain will begin at the last fid which was copied. Processing
+will then continue as before with the exception of the deletion logic which will be skipped.
 
 All source and dest parameters are requred unless a settings file is being used. Command line settings will override 
 values in the settings file if they are valid.
 EOS
 arg_name '[settings_file]'
-command :sync do |c|
+command :mirror do |c|
 
-  c.desc 'Scan the entire source doamin copying/deleting files in the destination domain as needed so that the domains match exactly'
-  c.switch ['mirror']
+  c.desc 'Only copy over files which have been added since the last mirror'
+  c.switch ['incremental']
 
   c.desc 'source database name'
   c.flag :source_db
@@ -279,7 +283,7 @@ command :sync do |c|
       #required options and arguments
       $0 = "mogbak [master]"
 
-      merge = Merge.new(
+      mirror = Mirror.new(
         :source_tracker_ip => options[:source_trackerip],
         :source_tracker_port => options[:source_trackerport],
         :source_domain => options[:source_domain],
@@ -298,7 +302,7 @@ command :sync do |c|
         :dest_db_passwd => options[:dest_dbpass],
         :settings => args.length > 0 ? args[0] : nil)
 
-      merge.process(options[:"mirror"])
+      mirror.process(options[:"mirror"])
 
     rescue Exception => e
       puts e
