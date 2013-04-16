@@ -6,7 +6,6 @@ module Validations
   #@return [Bool]
   def check_settings_file(raise_msg = 'settings.yml not found in path.  This must not be a backup profile. See: mogbak help create')
     if File.exists?("#{$backup_path}/settings.yml")
-      Log.instance.debug("Settings file [ #{$backup_path}/settings.yml ] exists.")
       return true
     else
       raise raise_msg if raise_msg
@@ -23,7 +22,6 @@ module Validations
       raise raise_msg if raise_msg
       return false
     end
-    Log.instance.debug("Backup path exists.")
     true
   end
 
@@ -34,9 +32,6 @@ module Validations
     begin
       if !File.exists?("#{$backup_path}/db.sqlite")
         SQLite3::Database.new("#{$backup_path}/db.sqlite")
-        Log.instance.info("Created new sqlite database [ #{$backup_path}/db.sqlite ].")
-      else
-        Log.instance.debug("Sqlite database [ #{$backup_path}/db.sqlite ] already exists.")
       end
     rescue Exception => e
       raise raise_msg if raise_msg
@@ -51,7 +46,6 @@ module Validations
   def connect_sqlite(raise_msg = nil)
     begin
       ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => "#{$backup_path}/db.sqlite", :timeout => 10000)
-      Log.instance.info("Connected to sqlite database [ #{$backup_path}/db.sqlite ].")
     rescue Exception => e
       raise raise_msg if raise_msg
       raise e if $debug
@@ -87,7 +81,6 @@ module Validations
                                                :password => @db_pass,
                                                :database => @db,
                                                :reconnect => true})
-      Log.instance.info("Connected to mogile database [ #{@db} ].")
     rescue Exception => e
       raise raise_msg if raise_msg
       return false
@@ -102,7 +95,6 @@ module Validations
     host = ["#{@tracker_ip}:#{@tracker_port}"]
     begin
     $mg = MogileFS::MogileFS.new(:domain => @domain, :hosts => host)
-    Log.instance.info("Connected to mogile tracker [ #{host.join(',')} -> #{@domain} ].")
     rescue Exception => e
       if $debug
         raise e
@@ -122,7 +114,6 @@ module Validations
       raise raise_msg if raise_msg
       return false
     end
-    Log.instance.debug("Verified domain [ #{self.domain} ] exists")
     true
   end
 
