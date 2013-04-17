@@ -1,6 +1,6 @@
 # Mirrors a mogile domain to another mogile domain
 class Mirror
-  attr_accessor :source_mogile, :dest_mogile, :start, :added, :updated, :uptodate, :removed, :failures
+  attr_accessor :dest_mogile, :dest_mogile_admin, :source_mogile, :source_mogile_admin, :start, :added, :updated, :uptodate, :removed, :failures
 
   BYTE_RANGE = %W(TiB GiB MiB KiB B).freeze
   TIME_RANGE = [[60, :seconds], [60, :minutes], [24, :hours], [1000, :days]].freeze
@@ -9,12 +9,12 @@ class Mirror
   #
   # @param [Hash] cli_settings A hash containing any settings for the mirror
   def initialize(cli_settings={})
-    require('sourcedomain')
-    require('sourcefile')
-    require('destdomain')
-    require('destfile')
-    require('fileclass')
-    require('mirrorfile')
+    require 'sourcedomain'
+    require 'sourcefile'
+    require 'destdomain'
+    require 'destfile'
+    require 'fileclass'
+    require 'mirrorfile'
 
     @start = Time.now
     @uptodate = 0
@@ -37,7 +37,7 @@ class Mirror
 
     # Verify mysql settings
     # This will map everything to the dest db connection by default
-    establish_connection(
+    establish_ar_connection(
       ActiveRecord::Base,
       settings[:dest][:db_host],
       settings[:dest][:db_port],
@@ -45,8 +45,17 @@ class Mirror
       settings[:dest][:db_passwd],
       settings[:dest][:db])
 
+    # This will map the sourceclass class to the source db connection
+    establish_ar_connection(
+      SourceClass,
+      settings[:source][:db_host],
+      settings[:source][:db_port],
+      settings[:source][:db_username],
+      settings[:source][:db_passwd],
+      settings[:source][:db])
+
     # This will map the sourcedomain class to the source db connection
-    establish_connection(
+    establish_ar_connection(
       SourceDomain,
       settings[:source][:db_host],
       settings[:source][:db_port],
@@ -55,7 +64,7 @@ class Mirror
       settings[:source][:db])
 
     # This will map the sourcefile class to the source db connection
-    establish_connection(
+    establish_ar_connection(
       SourceFile,
       settings[:source][:db_host],
       settings[:source][:db_port],
@@ -72,7 +81,17 @@ class Mirror
       settings[:dest][:tracker_port],
       settings[:dest][:domain])
 
+    @dest_mogile_admin = mogile_admin_connect(
+      settings[:dest][:tracker_ip],
+      settings[:dest][:tracker_port],
+      settings[:dest][:domain])
+
     @source_mogile = mogile_tracker_connect(
+      settings[:source][:tracker_ip],
+      settings[:source][:tracker_port],
+      settings[:source][:domain])
+
+    @source_mogile_admin = mogile_admin_connect(
       settings[:source][:tracker_ip],
       settings[:source][:tracker_port],
       settings[:source][:domain])
@@ -146,7 +165,7 @@ class Mirror
     end
   end
 
-  # Establish a connection to a mysql database
+  # Establish a connection to an activerecord database
   #
   # @param [Class] klass The class to bind the connection to
   # @param [String] host The database host
@@ -156,7 +175,7 @@ class Mirror
   # @param [String] schema The database schema
   # @param [String] adapter The database adapter to use (defaults to mysql2)
   # @param [String] reconnect Whether or not to reconnect (defaults to true)
-  def establish_connection(klass, host, port, username, passwd, schema,adapter='mysql2', reconnect=true)
+  def establish_ar_connection(klass, host, port, username, passwd, schema,adapter='mysql2', reconnect=true)
     #Verify that we can connect to the mogilefs mysql server
     begin
       pool = klass.establish_connection({
@@ -205,11 +224,41 @@ class Mirror
     mogile
   end
 
+  # Establish a connection to mogile admin
+  #
+  # @param [String] ip The IP of the mogile tracker
+  # @param [String] port The port of the mogile tracker
+  # @param [String] domain The domain to connect to
+  #
+  # @return [MogileFS] The instantiated mogilefs instance
+  def mogile_admin_connect(ip, port, domain)
+    hosts = ["#{ip}:#{port}"]
+
+    mogile = nil
+    begin
+      mogile = MogileFS::Admin.new(:domain => domain, :hosts => hosts)
+
+      # Connections don't seem to actually be verified as valid until we do something with them
+      # (Note: this will also validate the domain exists)
+      mogile.get_domains()
+      Log.instance.info("Connected to mogile admin [ #{hosts.join(',')} -> #{domain} ].")
+
+    rescue Exception => e
+      Log.instance.error("Could not connect to MogildFS admin: #{e}\n#{e.backtrace}")
+      raise 'Could not connect to MogileFS admin'
+    end
+
+    mogile
+  end
+
   # The main processing method for the Mirror class. Processes all necesary information based on
   # user inputs and prints a summary
   #
   # @param [Boolean] incremental Whether the program should perform an incremental mirror or not (defaults to false)
   def mirror(incremental=false)
+    # First, make sure the source file classes exist in the destination mogile
+    mirror_class_entries
+
     begin
       # Clear out data from previous runs unless we are doing a full mirror
       ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{MirrorFile.table_name}") unless incremental
@@ -228,6 +277,21 @@ class Mirror
     end
   end
 
+  # Mirror all classes from the source mogile to the destination mogile
+  def mirror_class_entries()
+    # get_domains returns a hash of each domain's classes and their configuration settings
+    source_domain_info = @source_mogile_admin.get_domains()[@source_mogile.domain]
+    dest_domain_info = @dest_mogile_admin.get_domains()[@dest_mogile.domain]
+
+    # Loop through all of the source domain classes and add any which do not exist in the destination mogile.
+    source_domain_info.each do |sourceclass, classinfo|
+      if not dest_domain_info.has_key?(sourceclass)
+        @dest_mogile_admin.create_class(@dest_mogile.domain, sourceclass, classinfo)
+        Log.instance.info("Added class #{sourceclass} to [ #{@dest_mogile.domain} ]")
+      end
+    end
+  end
+
   # Mirror all files from the source mogile which do not exist in the destination mogile
   def mirror_missing_destination_files()
     # Find the id of the domain we are mirroring
@@ -238,7 +302,7 @@ class Mirror
     max_fid = MirrorFile.max_fid
 
     # Process source files in batches.
-    Log.instance.info("Searching for files in domain #{source_domain.namespace} whose fid is larger than #{max_fid}")
+    Log.instance.info("Searching for files in domain [ #{source_domain.namespace} ] whose fid is larger than [ #{max_fid} ].")
     SourceFile.find_in_batches(
       :conditions => ['dmid = ? AND fid > ?', source_domain.dmid, max_fid],
       :batch_size => 1000,
@@ -285,28 +349,28 @@ class Mirror
         if file.length != destfile.length
           # File exists but has been modified. Copy it over.
           begin
-            Log.instance.debug("key #{file.dkey} is out of date... updating.")
+            Log.instance.debug("Key [ #{file.dkey} ] is out of date. Updating.")
             stream_copy(file)
             @updated += 1
             @copied_bytes += file.length
           rescue Exception => e
             @failed += 1
-            Log.instance.error("Error updating [ #{file.dkey} ]: #{e.message}")
+            Log.instance.error("Error updating [ #{file.dkey} ]: #{e.message}.")
           end
         else
-          Log.instance.debug("key #{file.dkey} is up to date.")
+          Log.instance.debug("key [ #{file.dkey} ] is up to date.")
           @uptodate += 1
         end
       else
         # File does not exist. Copy it over.
         begin
-          Log.instance.debug("key #{file.dkey} does not exist... creating.")
+          Log.instance.debug("key [ #{file.dkey} ] does not exist... creating.")
           stream_copy(file)
           @added += 1
           @copied_bytes += file.length
         rescue Exception => e
           @failed += 1
-          Log.instance.error("Error adding [ #{file.dkey} ]: #{e.message}")
+          Log.instance.error("Error adding [ #{file.dkey} ]: #{e.message}.")
         end
       end
     end
@@ -336,7 +400,7 @@ class Mirror
 
     # Throw an exception if the child process exited non-zero
     if $?.exitstatus != 0
-      Log.instance.error("Child exited with a status of #{$?.exitstatus}.")
+      Log.instance.error("Child exited with a status of [ #{$?.exitstatus} ].")
       raise "Error getting file data from [ #{@source_mogile.domain} ]"
     end
   end
@@ -358,13 +422,13 @@ class Mirror
 
         # Delete all files from our destination domain which no longer exist in the source domain.
         begin
-          Log.instance.debug("key #{file.dkey} should not exist. Deleting.")
+          Log.instance.debug("key [ #{file.dkey} ] should not exist. Deleting.")
           @dest_mogile.delete(file.dkey)
           @removed += 1
           @freed_bytes += file.length
         rescue Exception => e
           @failed += 1
-          Log.instance.error("Error deleting [ #{file.dkey} ]: #{e.message}")
+          Log.instance.error("Error deleting [ #{file.dkey} ]: #{e.message}.")
         end
       end
 
@@ -378,7 +442,7 @@ class Mirror
 
   # Uses instance level variables to log a summary of files processed
   def summarize
-    Log.instance.info "Summary => Execution time: #{as_time_elapsed(Time.now - @start)}, Up To Date: #{@uptodate}, Failures: #{@failed}, Added: #{@added}, Updated: #{@updated}, Bytes Transferred: #{as_byte_size(@copied_bytes)}, Removed: #{@removed}, Bytes Freed #{as_byte_size(@freed_bytes)}"
+    Log.instance.info "Summary => Execution time: #{as_time_elapsed(Time.now - @start)}, Up To Date: #{@uptodate}, Failures: #{@failed}, Added: #{@added}, Updated: #{@updated}, Bytes Transferred: #{as_byte_size(@copied_bytes)}, Removed: #{@removed}, Bytes Freed #{as_byte_size(@freed_bytes)}."
   end
 
   # Prints a more complete, better formatted summary of files processed during the current execution of a mirror
