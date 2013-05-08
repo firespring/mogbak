@@ -4,7 +4,7 @@ LVM snapshots.  Mogbak can also fork worker processes to backup or restore files
 
 ##Need a backup?
     mogbak create --db=mogilefs --dbhost=mysqlserver --dbpass=secret --dbuser=mogile --domain=awesomeapp \\
-    --trackerip=10.10.10.10 --workers=10 /backups/awesomeapp
+    --trackerip=10.10.10.10 /backups/awesomeapp
     mogbak backup /backups/awesomeapp
     
 ###Perhaps you want an incremental, no problem.
