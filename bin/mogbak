@@ -222,6 +222,9 @@ command :mirror do |c|
   c.desc 'Only copy over files which have been added since the last mirror'
   c.switch ['incremental']
 
+  c.desc 'send restore output to log file'
+  c.flag ['log-file']
+
   c.desc 'source database name'
   c.flag :source_db
 
@@ -274,6 +277,9 @@ command :mirror do |c|
     begin
       #required options and arguments
       $0 = "mogbak [master]"
+
+      #setup a logger for output
+      Log.instance(options[:'log-file'])
 
       mirror = Mirror.new(
         :source_tracker_ip => options[:source_trackerip],

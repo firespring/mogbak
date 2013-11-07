@@ -45,15 +45,6 @@ class Mirror
       settings[:dest][:db_passwd],
       settings[:dest][:db])
 
-    # This will map the sourceclass class to the source db connection
-    establish_ar_connection(
-      SourceClass,
-      settings[:source][:db_host],
-      settings[:source][:db_port],
-      settings[:source][:db_username],
-      settings[:source][:db_passwd],
-      settings[:source][:db])
-
     # This will map the sourcedomain class to the source db connection
     establish_ar_connection(
       SourceDomain,
@@ -141,14 +132,14 @@ class Mirror
     settings[:source][:tracker_port] = cli_settings[:source_tracker_port] if cli_settings[:source_tracker_port]
 
     settings[:dest] ||= {}
-    settings[:dest][:db] =           cli_settings[:dest_db]           if cli_settings[:dest_db]
-    settings[:dest][:db_host] =      cli_settings[:dest_db_host]      if cli_settings[:dest_db_host]
-    settings[:dest][:db_port] =      cli_settings[:dest_db_port].to_i if cli_settings[:dest_db_port]
-    settings[:dest][:db_passwd] =    cli_settings[:dest_db_passwd]    if cli_settings[:dest_db_passwd]
-    settings[:dest][:db_username] =  cli_settings[:dest_db_username]  if cli_settings[:dest_db_username]
-    settings[:dest][:domain] =       cli_settings[:dest_domain]       if cli_settings[:dest_domain]
-    settings[:dest][:tracker_ip] =   cli_settings[:dest_tracker_ip]   if cli_settings[:dest_tracker_ip]
-    settings[:dest][:tracker_port] = cli_settings[:dest_tracker_port] if cli_settings[:dest_tracker_port]
+    settings[:dest][:db] =             cli_settings[:dest_db]             if cli_settings[:dest_db]
+    settings[:dest][:db_host] =        cli_settings[:dest_db_host]        if cli_settings[:dest_db_host]
+    settings[:dest][:db_port] =        cli_settings[:dest_db_port].to_i   if cli_settings[:dest_db_port]
+    settings[:dest][:db_passwd] =      cli_settings[:dest_db_passwd]      if cli_settings[:dest_db_passwd]
+    settings[:dest][:db_username] =    cli_settings[:dest_db_username]    if cli_settings[:dest_db_username]
+    settings[:dest][:domain] =         cli_settings[:dest_domain]         if cli_settings[:dest_domain]
+    settings[:dest][:tracker_ip] =     cli_settings[:dest_tracker_ip]     if cli_settings[:dest_tracker_ip]
+    settings[:dest][:tracker_port] =   cli_settings[:dest_tracker_port]   if cli_settings[:dest_tracker_port]
   end
 
   # Save the settings for the backup into a yaml file (settings.yaml) so that
@@ -217,7 +208,7 @@ class Mirror
       Log.instance.info("Connected to mogile tracker [ #{hosts.join(',')} -> #{domain} ].")
 
     rescue Exception => e
-      Log.instance.error("Could not connect to MogildFS tracker: #{e}\n#{e.backtrace}")
+      Log.instance.error("Could not connect to MogildFS tracker at #{ip}: #{e}\n#{e.backtrace}")
       raise 'Could not connect to MogileFS tracker'
     end
 
@@ -355,13 +346,14 @@ class Mirror
             @copied_bytes += file.length
           rescue Exception => e
             @failed += 1
-            Log.instance.error("Error updating [ #{file.dkey} ]: #{e.message}.")
+            Log.instance.error("Error updating [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")
           end
         else
           Log.instance.debug("key [ #{file.dkey} ] is up to date.")
           @uptodate += 1
         end
       else
+
         # File does not exist. Copy it over.
         begin
           Log.instance.debug("key [ #{file.dkey} ] does not exist... creating.")
@@ -370,7 +362,7 @@ class Mirror
           @copied_bytes += file.length
         rescue Exception => e
           @failed += 1
-          Log.instance.error("Error adding [ #{file.dkey} ]: #{e.message}.")
+          Log.instance.error("Error adding [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")
         end
       end
     end
@@ -428,7 +420,7 @@ class Mirror
           @freed_bytes += file.length
         rescue Exception => e
           @failed += 1
-          Log.instance.error("Error deleting [ #{file.dkey} ]: #{e.message}.")
+          Log.instance.error("Error deleting [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")
         end
       end
 
