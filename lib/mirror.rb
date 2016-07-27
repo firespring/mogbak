@@ -294,11 +294,7 @@ class Mirror
 
     # Process source files in batches.
     Log.instance.info("Searching for files in domain [ #{source_domain.namespace} ] whose fid is larger than [ #{max_fid} ].")
-    SourceFile.find_in_batches(
-      :conditions => ['dmid = ? AND fid > ?', source_domain.dmid, max_fid],
-      :batch_size => 1000,
-      :include => [:domain, :fileclass]) do |batch|
-
+    SourceFile.where('dmid = ? AND fid > ?', source_domain.dmid, max_fid).includes(:domain, :fileclass).find_in_batches(batch_size: 1000) do |batch|
       # Create an array of MirrorFiles which represents files we have mirrored.
       remotefiles = batch.collect {|file| MirrorFile.new(:fid => file.fid, :dkey => file.dkey, :length => file.length, :classname => file.classname)}
 
@@ -403,11 +399,7 @@ class Mirror
     # join mirror_file and dest_file and delete everything from dest_file which isn't in mirror_file
     # because mirror_file should represent the current state of the source mogile files
     Log.instance.info("Joining destination and mirror tables to determine files that have been deleted from source repo.")
-    DestFile.find_in_batches(
-      :joins => 'LEFT OUTER JOIN mirror_file ON mirror_file.dkey = file.dkey',
-      :conditions => 'mirror_file.dkey IS NULL',
-      :batch_size => 1000) do |batch|
-
+    DestFile.where('mirror_file.dkey IS NULL').joins('LEFT OUTER JOIN mirror_file ON mirror_file.dkey = file.dkey').find_in_batches(batch_size: 1000) do |batch|
       batch.each do |file|
         # Quit if program exit has been requested.
         break if SignalHandler.instance.should_quit

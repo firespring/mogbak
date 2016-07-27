@@ -34,7 +34,7 @@ require 'log'
 #activate signal handler
 SignalHandler.instance
 
-include GLI
+include GLI::App
 program_desc 'Backup a mogilefs domain to the filesystem.  mogbak needs SELECT access to your MogileFS tracker database, which must
 currently be MySQL.'
 
@@ -331,4 +331,4 @@ on_error do |exception|
   true
 end
 
-exit GLI.run(ARGV)
+exit run(ARGV)
