@@ -24,4 +24,5 @@ Gem::Specification.new do |s|
   s.add_runtime_dependency('activerecord', '~> 5.0.0')
   s.add_runtime_dependency('activerecord-import', '~> 0.15.0')
   s.add_runtime_dependency('composite_primary_keys', '>= 9.0.0')
+  s.add_runtime_dependency('aws-sdk', '~> 2')
 end

@@ -20,6 +20,7 @@ require 'backup'
 require 'restore'
 require 'list'
 require 'mirror'
+require 'mirror_s3'
 require 'active_record'
 require 'activerecord-import'
 require 'composite_primary_keys'
@@ -228,8 +229,7 @@ compares each file to the destination domain, verifying that the key exists and 
 the case, it will stream the file from the source domain to the destination domain. When all of this is finished, the
 destination domain will be joined with the files we copied and any extra files in the destination domain will be deleted.
 
-If 'incremental' is specified, then the scan of the source domain will begin at the last fid which was copied. Processing
-will then continue as before with the exception of the deletion logic which will be skipped.
+If 'incremental' is specified, then the scan of the source domain will begin at the last fid which was copied.
 
 All source and dest parameters are requred unless a settings file is being used. Command line settings will override
 values in the settings file if they are valid. Settings are saved to mirror.settings.yml by default but an alternate
@@ -320,6 +320,97 @@ command :mirror do |c|
       )
 
       mirror.mirror(options[:incremental])
+
+    rescue => e
+      puts "Uncaught Error: #{e}\n#{e.backtrace.join("\n")}"
+      raise
+    end
+  end
+end
+
+desc 'Mirrors a MogileFS domain to an AWS S3 bucket.'
+long_desc <<-eos
+By default this function will scan the entire source domain and
+compares each file to the destination bucket, verifying that the key exists and the file sizes match. If either is not
+the case, it will stream the file from the source domain to the destination bucket. When all of this is finished, the
+destination bucket will be joined with the files we copied and any extra files in the destination bucket will be deleted.
+
+If 'incremental' is specified, then the scan of the source domain will begin at the last fid which was copied.
+
+All source and dest parameters are requred unless a settings file is being used. Command line settings will override
+values in the settings file if they are valid. Settings are saved to mirror_s3.settings.yml by default but an alternate
+configuration file may be specified.
+eos
+arg_name '[settings_file]'
+command :'mirror_s3' do |c|
+  c.desc 'Only copy over files which have been added since the last mirror'
+  c.switch ['incremental']
+
+  c.desc 'send restore output to log file'
+  c.flag ['log-file']
+
+  c.desc 'source database name'
+  c.flag :source_db
+
+  c.desc 'source mysql db server host'
+  c.flag :source_dbhost
+
+  c.desc 'source database password (REQUIRED)'
+  c.flag :source_dbpass
+
+  c.desc 'source mysql db server port'
+  c.flag :source_dbport
+
+  c.desc 'source database user'
+  c.flag :source_dbuser
+
+  c.desc 'source mogilefs domain'
+  c.flag :source_domain
+
+  c.desc 'source tracker ip'
+  c.flag :source_trackerip
+
+  c.desc 'source tracker port'
+  c.flag :source_trackerport
+
+  c.desc 'dest access key id'
+  c.flag :dest_access_key_id
+
+  c.desc 'dest access key'
+  c.flag :dest_access_key
+
+  c.desc 'dest bucket'
+  c.flag :dest_bucket
+
+  c.action do |_global_options, options, args|
+    begin
+      #required options and arguments
+      $0 = 'mogbak [master]'
+
+      #setup a logger for output
+      Log.instance(options[:'log-file'])
+
+      mirror_s3 = MirrorS3.new(
+        source_tracker_ip: options[:source_trackerip],
+        source_tracker_port: options[:source_trackerport],
+        source_domain: options[:source_domain],
+        source_db_host: options[:source_dbhost],
+        source_db_port: options[:source_dbport],
+        source_db: options[:source_db],
+        source_db_username: options[:source_dbuser],
+        source_db_passwd: options[:source_dbpass],
+        dest_access_key_id: options[:dest_access_key_id],
+        dest_access_key: options[:dest_access_key],
+        dest_bucket: options[:dest_bucket],
+#        dest_db_host: options[:dest_dbhost],
+#        dest_db_port: options[:dest_dbport],
+#        dest_db: options[:dest_db],
+#        dest_db_username: options[:dest_dbuser],
+#        dest_db_passwd: options[:dest_dbpass],
+        settings: !args.empty? ? args[0] : nil
+      )
+
+      mirror_s3.mirror(options[:incremental])
 
     rescue => e
       puts "Uncaught Error: #{e}\n#{e.backtrace.join("\n")}"

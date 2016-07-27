@@ -3,7 +3,7 @@ services:
   mogbak_mirror:
     image: "sbfroot_mogbak${DOCKER_TAG}"
     build:
-      context: ./mogbak
+      context: ./
     environment:
       HISTFILE: '/root/.history/bash'
       MYSQL_HISTFILE: '/root/.history/mysql'
@@ -22,7 +22,7 @@ services:
   srcmogile-node:
     image: "sbfroot_mogile-node${DOCKER_TAG}"
     build:
-      context: ./sbf-db/mogile-node
+      context: ../sbf-db/mogile-node
     ports:
       - "7500"
     volumes:
@@ -31,7 +31,7 @@ services:
   srcmogile-tracker:
     image: "sbfroot_mogile-tracker${DOCKER_TAG}"
     build:
-      context: ./sbf-db/mogile-tracker
+      context: ../sbf-db/mogile-tracker
     ports:
       - "7001"
       - "3306"
