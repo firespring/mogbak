@@ -80,24 +80,30 @@ command :create do |c|
 
 
   c.action do |global_options, options, args|
+    begin
+      #required options and arguments
+      raise '--dbpass is required - see: mogbak help creater' unless options[:dbpass]
+      raise '[backup_path] is required see mogadm - see: mogbak help create' unless args[0]
+      $backup_path = args[0]
+      $0 = "mogbak [master] #{$backup_path}"
 
-    #required options and arguments
-    raise '--dbpass is required - see: mogbak help creater' unless options[:dbpass]
-    raise '[backup_path] is required see mogadm - see: mogbak help create' unless args[0]
-    $backup_path = args[0]
-    $0 = "mogbak [master] #{$backup_path}"
+      mog = Create.new(
+        :tracker_ip => options[:trackerip],
+        :tracker_port => options[:trackerport],
+        :domain => options[:domain],
+        :db_host => options[:dbhost],
+        :db_port => options[:dbport],
+        :db => options[:db],
+        :db_user => options[:dbuser],
+        :db_pass => options[:dbpass],
+        :backup_path => args[0]
+      )
 
-
-    mog = Create.new(:tracker_ip => options[:trackerip],
-                      :tracker_port => options[:trackerport],
-                      :domain => options[:domain],
-                      :db_host => options[:dbhost],
-                      :db_port => options[:dbport],
-                      :db => options[:db],
-                      :db_user => options[:dbuser],
-                      :db_pass => options[:dbpass],
-                      :backup_path => args[0])
-    puts "Backup profile successfully created. To start a backup run: mogbak backup #{args[0]}"
+      puts "Backup profile successfully created. To start a backup run: mogbak backup #{args[0]}"
+    rescue => e
+      puts "Uncaught Error: #{e}\n#{e.backtrace.join("\n")}"
+      raise
+    end
   end
 end
 
@@ -118,17 +124,22 @@ command :backup do |c|
   c.flag ['log-file']
 
   c.action do |global_options, options, args|
-    raise '[backup_path] is required - see: mogbak help backup' unless args[0]
-    $backup_path = args[0]
-    $0 = "mogbak [master] #{$backup_path}"
+    begin
+      raise '[backup_path] is required - see: mogbak help backup' unless args[0]
+      $backup_path = args[0]
+      $0 = "mogbak [master] #{$backup_path}"
 
-    #setup a logger for output
-    Log.instance(options[:'log-file'])
+      #setup a logger for output
+      Log.instance(options[:'log-file'])
 
-    mog = Backup.new(:backup_path => args[0], :workers => options[:workers].to_i)
-    mog.backup(:no_delete => options[:"no-delete"], :non_stop => options[:"non-stop"])
+      mog = Backup.new(:backup_path => args[0], :workers => options[:workers].to_i)
+      mog.backup(:no_delete => options[:"no-delete"], :non_stop => options[:"non-stop"])
+
+    rescue => e
+      puts "Uncaught Error: #{e}\n#{e.backtrace.join("\n")}"
+      raise
+    end
   end
-
 end
 
 desc 'Restore a backup to a new MogileFS domain.'
@@ -162,20 +173,27 @@ command :restore do |c|
   c.flag ['log-file']
 
   c.action do |global_options, options, args|
-    raise 'domain parameter is required - see: mogbak help restore' unless options[:domain]
-    raise '[backup_path] is required - see: mogbak help restore' unless args[0]
-    $backup_path = args[0]
-    $0 = "mogbak [master] #{$backup_path}"
+    begin
+      raise 'domain parameter is required - see: mogbak help restore' unless options[:domain]
+      raise '[backup_path] is required - see: mogbak help restore' unless args[0]
+      $backup_path = args[0]
+      $0 = "mogbak [master] #{$backup_path}"
 
-    #setup a logger for output
-    Log.instance(options[:'log-file'])
+      #setup a logger for output
+      Log.instance(options[:'log-file'])
 
-    restore = Restore.new(:tracker_ip => options[:trackerip],
-                          :tracker_port => options[:trackerport],
-                          :domain => options[:domain],
-                          :backup_path => args[0],
-                          :workers => options[:workers])
-    restore.restore(options[:"single-file"])
+      restore = Restore.new(
+        :tracker_ip => options[:trackerip],
+        :tracker_port => options[:trackerport],
+        :domain => options[:domain],
+        :backup_path => args[0],
+        :workers => options[:workers]
+      )
+      restore.restore(options[:"single-file"])
+    rescue => e
+      puts "Uncaught Error: #{e}\n#{e.backtrace.join("\n")}"
+      raise
+    end
   end
 end
 
@@ -190,15 +208,20 @@ command :list do |c|
   c.flag ['log-file']
 
   c.action do |global_options, options, args|
-    raise '[backup_path] is required - see: mogbak help list' unless args[0]
-    $backup_path = args[0]
-    $0 = "mogbak [master] #{$backup_path}"
+    begin
+      raise '[backup_path] is required - see: mogbak help list' unless args[0]
+      $backup_path = args[0]
+      $0 = "mogbak [master] #{$backup_path}"
 
-    #setup a logger for output
-    Log.instance(options[:'log-file'])
+      #setup a logger for output
+      Log.instance(options[:'log-file'])
 
-    list = List.new(:backup_path => args[0])
-    list.list
+      list = List.new(:backup_path => args[0])
+      list.list
+    rescue => e
+      puts "Uncaught Error: #{e}\n#{e.backtrace.join("\n")}"
+      raise
+    end
   end
 end
 
@@ -302,9 +325,9 @@ command :mirror do |c|
 
       mirror.mirror(options[:incremental])
 
-    rescue Exception => e
-      puts e
-      puts e.backtrace
+    rescue => e
+      puts "Uncaught Error: #{e}\n#{e.backtrace.join("\n")}"
+      raise
     end
   end
 end

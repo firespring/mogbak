@@ -21,7 +21,7 @@ class List
   #Outputs a list of files in CSV format
   #fid,key,length,class
   def list
-    files = BakFile.find_each(:conditions => ['saved = ?', true]) do |file|
+    files = BakFile.where('saved = ?', true).each do |file|
       Log.instance.info("#{file.fid},#{file.dkey},#{file.length},#{file.classname}")
       break if SignalHandler.instance.should_quit
     end

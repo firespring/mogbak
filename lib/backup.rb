@@ -6,7 +6,6 @@ class Backup
   #Run validations and prepare the object for a backup
   #@param [Hash] o hash containing the settings for the backup
   def initialize(o={})
-
     #Load up the settings file
     check_settings_file
     settings = YAML::load(File.open("#{$backup_path}/settings.yml"))
@@ -66,7 +65,7 @@ class Backup
       end
 
       #bulk update all the fids.  much faster then doing it one at a time
-      BakFile.update_all({:saved => true}, {:fid => fids})
+      BakFile.where(fid: fids).update_all(saved: true)
 
       #release the connection from the connection pool
       SqliteActiveRecord.clear_active_connections!
@@ -120,7 +119,7 @@ class Backup
         fids << result
       end
 
-      BakFile.delete_all({:fid => fids})
+      BakFile.where(fid: fids).delete_all
 
       #release the connection from the connection pool
       SqliteActiveRecord.clear_active_connections!
@@ -141,7 +140,7 @@ class Backup
     loop do
       files = []
       #first we retry files that we haven't been able to backup successfully, if any.
-      BakFile.find_each(:conditions => ['saved = ?', false]) do |bak_file|
+      BakFile.where('saved = ?', false).each do |bak_file|
         files << bak_file
       end
 
@@ -150,7 +149,7 @@ class Backup
       #now back up any new files.  if they fail to be backed up we'll retry them the next time the backup
       #command is ran.
       dmid = Domain.find_by_namespace(self.domain)
-      results = Fid.find_in_batches(:conditions => ['dmid = ? AND fid > ?', dmid, BakFile.max_fid], :batch_size => 500 * self.workers.to_i, :include => [:domain, :fileclass]) do |batch|
+      results = Fid.where('dmid = ? AND fid > ?', dmid, BakFile.max_fid).includes(:domain, :fileclass).find_in_batches(batch_size: 500 * self.workers.to_i) do |batch|
 
         #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
         files = []
@@ -187,7 +186,8 @@ class Backup
       #all in all it's not so bad
       if !o[:no_delete]
         Log.instance.info("Start: Search for files to delete")
-        BakFile.find_in_batches { |bak_files|
+        BakFile.find_in_batches do |bak_files|
+          puts "BAK_FILES IS #{bak_files.inspect}"
           union = "SELECT #{bak_files.first.fid} as fid"
           bak_files.shift
           bak_files.each do |bakfile|
@@ -199,7 +199,7 @@ class Backup
 
           #Terminate program if the signal handler says so and this is a clean place to do it
           return true if SignalHandler.instance.should_quit
-        }
+        end
         Log.instance.info("End: Search for files to delete")
       end
 

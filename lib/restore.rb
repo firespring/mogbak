@@ -37,22 +37,19 @@ class Restore
   def launch_restore_workers(files)
     child = Proc.new { |files|
       results = []
-      files.each do |file|
+      files.map do |file|
         break if file.nil?
         break if SignalHandler.instance.should_quit
         save = file.restore
         output_save(save, file.fid)
-        results << {:restored => save, :fid => file.fid}
+
+        {:restored => save, :fid => file.fid}
       end
-      results
     }
 
-    parent = Proc.new { |results|
-      SqliteActiveRecord.clear_active_connections!
-    }
+    parent = Proc.new { |results| SqliteActiveRecord.clear_active_connections! }
 
     Forkinator.hybrid_fork(self.workers.to_i, files, parent, child)
-
   end
 
   def restore(dkey = false)
@@ -61,13 +58,12 @@ class Restore
       raise 'file not found in backup' unless file
       save = file.restore
       output_save(save, file.fid)
-    else
 
-      BakFile.find_in_batches(:conditions => ['saved = ?', true], :batch_size => 2000) do |batch|
+    else
+      BakFile.where('saved = ?', true).find_in_batches(batch_size: 2000) do |batch|
         launch_restore_workers(batch)
         break if SignalHandler.instance.should_quit
       end
-
     end
   end
 end
