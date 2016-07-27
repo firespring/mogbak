@@ -33,6 +33,5 @@ RUN bundle install
 
 # Copy in the actual api server code
 COPY . /usr/src/app
-VOLUME /usr/src/app/mirror.settings.yml
 
-CMD ["/usr/local/bundle/bin/bundle","exec","bin/mogbak","--debug","mirror"]
+CMD ["/bin/bash"]

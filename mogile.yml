@@ -1,0 +1,61 @@
+version: "2"
+services:
+  mogbak_mirror:
+    image: "sbfroot_mogbak${DOCKER_TAG}"
+    build:
+      context: ./mogbak
+    environment:
+      HISTFILE: '/root/.history/bash'
+      MYSQL_HISTFILE: '/root/.history/mysql'
+    volumes:
+      - .:/usr/src/app
+      - ./mirror.settings.yml:/usr/src/app/mirror.settings.yml
+      - ../.history:/root/.history
+      - ../.irbrc:/root/.irbrc
+      - ../.pryrc:/root/.pryrc
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - srcmogile-tracker
+      - dstmogile-tracker
+    command: bash -c 'sleep 15 && /usr/local/bundle/bin/bundle exec bin/mogbak --debug mirror'
+
+  srcmogile-node:
+    image: "sbfroot_mogile-node${DOCKER_TAG}"
+    build:
+      context: ./sbf-db/mogile-node
+    ports:
+      - "7500"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+
+  srcmogile-tracker:
+    image: "sbfroot_mogile-tracker${DOCKER_TAG}"
+    build:
+      context: ./sbf-db/mogile-tracker
+    ports:
+      - "7001"
+      - "3306"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - srcmogile-node
+    command: "sbf 'mediastorage_donation_form mediastorage_other mediastorage_photo' srcmogile-node 7500"
+
+  dstmogile-node:
+    image: quay.io/firespring_sbf/mogile-node
+    ports:
+      - "7500"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+
+  dstmogile-tracker:
+    image: quay.io/firespring_sbf/mogile-tracker:mysql
+    ports:
+      - "7001"
+      - "3306"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - dstmogile-node
+    command: "sbf '' dstmogile-node 7500"
+

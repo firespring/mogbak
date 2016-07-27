@@ -1,0 +1,19 @@
+---
+:source:
+  :db: mogilefs
+  :db_host: srcmogile-tracker
+  :db_port: 3306
+  :db_passwd: super
+  :db_username: root
+  :domain: sbf
+  :tracker_ip: srcmogile-tracker
+  :tracker_port: '7001'
+:dest:
+  :db: mogilefs
+  :db_host: dstmogile-tracker
+  :db_port: 3306
+  :db_passwd: super
+  :db_username: root
+  :domain: sbf
+  :tracker_ip: dstmogile-tracker
+  :tracker_port: '7001'
