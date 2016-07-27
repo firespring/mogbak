@@ -5,7 +5,7 @@ class Create
 
   #Run validations and create the backup profile
   #@param [Hash] o hash containing the settings for the backup profile
-  def initialize(o={})
+  def initialize(o = {})
     @db = o[:db] if o[:db]
     @db_host = o[:db_host] if o[:db_host]
     @db_port = Integer(o[:db_port]) if o[:db_port]
@@ -34,20 +34,20 @@ class Create
   #Save the settings for the backup into a yaml file (settings.yaml) so that an incremental can be ran without so many parameters
   #@return [Bool] true or false
   def save_settings
-    require ('yaml')
+    require 'yaml'
     settings = {
-        'db' => @db,
-        'db_host' => @db_host,
-        'db_port' => @db_port,
-        'db_pass' => @db_pass,
-        'db_user' => @db_user,
-        'domain' => @domain,
-        'tracker_ip' => @tracker_ip,
-        'tracker_port' => @tracker_port,
-        'backup_path' => $backup_path
+      'db' => @db,
+      'db_host' => @db_host,
+      'db_port' => @db_port,
+      'db_pass' => @db_pass,
+      'db_user' => @db_user,
+      'domain' => @domain,
+      'tracker_ip' => @tracker_ip,
+      'tracker_port' => @tracker_port,
+      'backup_path' => $backup_path
     }
 
-    File.open("#{$backup_path}/settings.yml", "w") do |file|
+    File.open("#{$backup_path}/settings.yml", 'w') do |file|
       file.write settings.to_yaml
     end
 

@@ -13,7 +13,7 @@ class SignalHandler
 
   def initialize
     @should_quit = false
-    Signal.trap("SIGINT") { handle_signal }
-    Signal.trap("SIGTERM") { handle_signal }
+    Signal.trap('SIGINT') { handle_signal }
+    Signal.trap('SIGTERM') { handle_signal }
   end
 end

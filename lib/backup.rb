@@ -5,10 +5,10 @@ class Backup
 
   #Run validations and prepare the object for a backup
   #@param [Hash] o hash containing the settings for the backup
-  def initialize(o={})
+  def initialize(o = {})
     #Load up the settings file
     check_settings_file
-    settings = YAML::load(File.open("#{$backup_path}/settings.yml"))
+    settings = YAML.load(File.open("#{$backup_path}/settings.yml"))
     @db = settings['db']
     @db_host = settings['db_host']
     @db_port = settings['db_port']
@@ -19,7 +19,6 @@ class Backup
     @tracker_port = settings['tracker_port']
     @workers = o[:workers] if o[:workers]
 
-
     #run validations and setup
     raise unless check_backup_path
     create_sqlite_db
@@ -29,12 +28,11 @@ class Backup
     mogile_tracker_connect
     check_mogile_domain(domain)
 
-    require ('domain')
+    require 'domain'
     require('file')
     require('bakfile')
     require('fileclass')
   end
-
 
   #Create a backup of a file using a BakFile object
   #@param [BakFile] file file that needs to be backed up
@@ -42,20 +40,19 @@ class Backup
   def bak_file(file)
     saved = file.bak_it
     if saved
-       Log.instance.info("Backed up: FID #{file.fid}")
+      Log.instance.info("Backed up: FID #{file.fid}")
     else
-       Log.instance.info("Error - will try again on next run: FID #{file.fid}")
+      Log.instance.info("Error - will try again on next run: FID #{file.fid}")
     end
 
-    return saved
+    saved
   end
 
   #Launch workers to backup an array of BakFiles
   #@param [Array] files must be an array of BakFiles
   def launch_backup_workers(files)
-
     #This proc will process the results of the child proc
-    parent = Proc.new { |results|
+    parent = proc do |results|
       fids = []
 
       results.each do |result|
@@ -69,34 +66,31 @@ class Backup
 
       #release the connection from the connection pool
       SqliteActiveRecord.clear_active_connections!
-    }
+    end
 
     #This proc receives an array of BakFiles,  proccesses them,  and returns a result array to the parent proc. We will break
     #from the files if the signal handler says so.
-    child = Proc.new { |files|
-      result = []
-      files.each do |file|
+    child = proc do |filenames|
+      filenames.map do |file|
         break if file.nil?
         break if SignalHandler.instance.should_quit
         saved = bak_file(file)
-        result << {:saved => saved, :file => file}
+
+        {saved: saved, file: file}
       end
-      result
-    }
+    end
 
     #launch workers using the above procs and files
-    Forkinator.hybrid_fork(self.workers.to_i, files, parent, child)
+    Forkinator.hybrid_fork(workers.to_i, files, parent, child)
   end
 
   #Launch workers to delete an array of files
   #param [Array] files must be an array of BakFiles that need to be deleted
   def launch_delete_workers(fids)
-
     #This proc receives an array of BakFiles, handles them,  and spits them back to the parent, break from the fids if
     #the signal handler says so.
-    child = Proc.new { |fids|
-      result = []
-      fids.each do |fid|
+    child = proc do |fileids|
+      fileids.map do |fid|
         break if fid.nil?
         break if SignalHandler.instance.should_quit
         deleted = BakFile.delete_from_fs(fid)
@@ -106,13 +100,12 @@ class Backup
           Log.instance.info("Failed to delete from backup: FID #{fid}")
         end
 
-        result << fid
+        fid
       end
-      result
-    }
+    end
 
     #This proc will process the results of the child proc
-    parent = Proc.new { |results|
+    parent = proc do |results|
       fids = []
 
       results.each do |result|
@@ -123,11 +116,10 @@ class Backup
 
       #release the connection from the connection pool
       SqliteActiveRecord.clear_active_connections!
-    }
+    end
 
     #launch workers using the above procs and files
-    Forkinator.hybrid_fork(self.workers.to_i, fids, parent, child)
-
+    Forkinator.hybrid_fork(workers.to_i, fids, parent, child)
   end
 
   #The real logic for backing the domain up.  It is pretty careful about making sure that it doesn't report a file
@@ -135,7 +127,6 @@ class Backup
   #from the mogilefs mysql server in groups of 500 * number of workers (default is 1 worker)
   #@param [Hash] o if :no_delete then don't remove deleted files from the backup (intensive process)
   def backup(o = {})
-
     #Loop over the main backup logic.  We'll break out at the end unless o[:non_stop] is set
     loop do
       files = []
@@ -148,26 +139,27 @@ class Backup
 
       #now back up any new files.  if they fail to be backed up we'll retry them the next time the backup
       #command is ran.
-      dmid = Domain.find_by_namespace(self.domain)
-      results = Fid.where('dmid = ? AND fid > ?', dmid, BakFile.max_fid).includes(:domain, :fileclass).find_in_batches(batch_size: 500 * self.workers.to_i) do |batch|
-
+      dmid = Domain.find_by_namespace(domain)
+      Fid.where('dmid = ? AND fid > ?', dmid, BakFile.max_fid).includes(:domain, :fileclass).find_in_batches(batch_size: 500 * workers.to_i) do |b|
         #Insert all the files into our bak db with :saved false so that we don't think we backed up something that crashed
         files = []
-        batch.each do |file|
-          files << BakFile.new(:fid => file.fid,
-                               :domain => file.domain.namespace,
-                               :dkey => file.dkey,
-                               :length => file.length,
-                               :classname => file.classname,
-                               :saved => false)
+        b.each do |file|
+          files << BakFile.new(
+            fid: file.fid,
+            domain: file.domain.namespace,
+            dkey: file.dkey,
+            length: file.length,
+            classname: file.classname,
+            saved: false
+          )
         end
 
         #There is no way to do a bulk insert in sqlite so this generates a lot of inserts.  wrapping all of the inserts
         #inside a single transaction makes it much much faster.
         BakFile.transaction do
-           files.each do |file|
-              file.save(:validate => false)
-           end
+          files.each do |file|
+            file.save(validate: false)
+          end
         end
 
         #Fire up the workers now that we have work for them to do
@@ -184,10 +176,9 @@ class Backup
       #create temporary table and insert privleges).  You might want to only run this operation every once and awhile if you have a
       #very large domain.  In my testing,  it is able to get through domains with millions of files in a matter of a second.  So
       #all in all it's not so bad
-      if !o[:no_delete]
-        Log.instance.info("Start: Search for files to delete")
+      unless o[:no_delete]
+        Log.instance.info('Start: Search for files to delete')
         BakFile.find_in_batches do |bak_files|
-          puts "BAK_FILES IS #{bak_files.inspect}"
           union = "SELECT #{bak_files.first.fid} as fid"
           bak_files.shift
           bak_files.each do |bakfile|
@@ -200,13 +191,12 @@ class Backup
           #Terminate program if the signal handler says so and this is a clean place to do it
           return true if SignalHandler.instance.should_quit
         end
-        Log.instance.info("End: Search for files to delete")
+        Log.instance.info('End: Search for files to delete')
       end
 
       #Break out of infinite loop unless o[:non_stop] is set
       break unless o[:non_stop]
       sleep 1
     end
-
   end
 end

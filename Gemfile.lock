@@ -2,16 +2,16 @@ PATH
   remote: .
   specs:
     mogbak (0.2.2)
-      activerecord
-      activerecord-import
-      composite_primary_keys
-      gli
-      mogilefs-client
-      mysql2
-      sqlite3
+      activerecord (~> 5.0.0)
+      activerecord-import (~> 0.15.0)
+      composite_primary_keys (>= 9.0.0)
+      gli (~> 2.14.0)
+      mogilefs-client (~> 3.9.0)
+      mysql2 (~> 0.4.4)
+      sqlite3 (~> 1.3.11)
 
 GEM
-  remote: http://rubygems.org/
+  remote: https://rubygems.org/
   specs:
     activemodel (5.0.0)
       activesupport (= 5.0.0)
@@ -27,6 +27,7 @@ GEM
       minitest (~> 5.1)
       tzinfo (~> 1.1)
     arel (7.1.0)
+    ast (2.3.0)
     awesome_print (1.7.0)
     composite_primary_keys (9.0.0)
       activerecord (~> 5.0.0)
@@ -36,10 +37,22 @@ GEM
     minitest (5.9.0)
     mogilefs-client (3.9.0)
     mysql2 (0.4.4)
+    parser (2.3.1.2)
+      ast (~> 2.2)
+    powerpack (0.1.1)
+    rainbow (2.1.0)
+    rubocop (0.42.0)
+      parser (>= 2.3.1.1, < 3.0)
+      powerpack (~> 0.1)
+      rainbow (>= 1.99.1, < 3.0)
+      ruby-progressbar (~> 1.7)
+      unicode-display_width (~> 1.0, >= 1.0.1)
+    ruby-progressbar (1.8.1)
     sqlite3 (1.3.11)
     thread_safe (0.3.5)
     tzinfo (1.2.2)
       thread_safe (~> 0.1)
+    unicode-display_width (1.1.0)
 
 PLATFORMS
   ruby
@@ -47,6 +60,7 @@ PLATFORMS
 DEPENDENCIES
   awesome_print
   mogbak!
+  rubocop
 
 BUNDLED WITH
    1.12.5

@@ -3,11 +3,9 @@ class List
   attr_accessor :backup_path
   include Validations
 
-
   #initialize the list object
   #@param[Hash] o :backup_path is required
-  def initialize(o={})
-
+  def initialize(_o = {})
     #If settings file does not exist then this is not a valid mogilefs backup
     check_settings_file('settings.yml not found in path.  This must not be a backup profile. Cannot list')
 
@@ -21,7 +19,7 @@ class List
   #Outputs a list of files in CSV format
   #fid,key,length,class
   def list
-    files = BakFile.where('saved = ?', true).each do |file|
+    BakFile.where('saved = ?', true).each do |file|
       Log.instance.info("#{file.fid},#{file.dkey},#{file.length},#{file.classname}")
       break if SignalHandler.instance.should_quit
     end

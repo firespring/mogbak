@@ -4,13 +4,12 @@ class Restore
   include Validations
 
   #
-  def initialize(o={})
+  def initialize(o = {})
     @domain = o[:domain] if o[:domain]
     @tracker_ip = o[:tracker_ip] if o[:tracker_ip]
     @tracker_port = o[:tracker_port] if o[:tracker_port]
     @backup_path = o[:backup_path] if o[:backup_path]
     @workers = o[:workers] if o[:workers]
-
 
     #If settings file does not exist then this is not a valid mogilefs backup
     check_settings_file('settings.yml not found in path.  This must not be a backup profile. Cannot restore')
@@ -20,7 +19,7 @@ class Restore
     mogile_tracker_connect
 
     #Now that database is all setup load the model classes
-    require ('domain')
+    require 'domain'
     require('file')
     require('bakfile')
     require('fileclass')
@@ -35,21 +34,20 @@ class Restore
   end
 
   def launch_restore_workers(files)
-    child = Proc.new { |files|
-      results = []
-      files.map do |file|
+    child = proc do |filenames|
+      filenames.map do |file|
         break if file.nil?
         break if SignalHandler.instance.should_quit
         save = file.restore
         output_save(save, file.fid)
 
-        {:restored => save, :fid => file.fid}
+        {restored: save, fid: file.fid}
       end
-    }
+    end
 
-    parent = Proc.new { |results| SqliteActiveRecord.clear_active_connections! }
+    parent = proc { |_| SqliteActiveRecord.clear_active_connections! }
 
-    Forkinator.hybrid_fork(self.workers.to_i, files, parent, child)
+    Forkinator.hybrid_fork(workers.to_i, files, parent, child)
   end
 
   def restore(dkey = false)

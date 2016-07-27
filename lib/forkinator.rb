@@ -2,7 +2,6 @@
 #the child process.  It uses a combination of threading and forking to accomplish this.  Marshal is used to pass objects back
 #and forth between the child and parent via IO.pipe.
 class Forkinator
-
   #Wait for threads
   #@param [Array] threads an array containing threads we need to wait on
   def self.wait_for_threads(threads)
@@ -19,7 +18,6 @@ class Forkinator
   #@param [Proc] child_proc code for the child to run
   #@return [Hash] :write = pipe for writing to the child, :read = pipe for reading from the child, :pid = pid of the child
   def self.make_child(child_proc)
-
     #open pipes for two way communication between the parent and child
     child_read, parent_write = IO.pipe
     parent_read, child_write = IO.pipe
@@ -37,7 +35,7 @@ class Forkinator
 
         #child loops through IO pipe,  listening for data from the parent,  if the parent closes the pipe then we're
         #done
-        while !child_read.eof? do
+        until child_read.eof?
           #rename the process to make it clear that it's a worker in idle status
           $0 = "mogbak [idle] #{$backup_path}"
           #this call blocks until it receives something from the parent via the pipe
@@ -64,7 +62,7 @@ class Forkinator
     child_read.close
     child_write.close
 
-    {:write => parent_write, :read => parent_read, :pid => pid}
+    {write: parent_write, read: parent_read, pid: pid}
   end
 
   #Forks children,  makes threads for two-way communication,  and evenly distributes jobs to each child.
@@ -86,11 +84,10 @@ class Forkinator
 
     #spawn the children
     children = []
-    qty.times { children << make_child(child_proc)}
+    qty.times { children << make_child(child_proc) }
 
     #For each worker
     qty.times do |i|
-
       #start a thread
       threads[i] = Thread.new do
         Thread.current.abort_on_exception = true

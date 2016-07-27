@@ -1,0 +1,49 @@
+# This is the configuration used to check the rubocop source code.
+inherit_from: #{RUBOCOP_HOME}/config/default.yml
+
+AllCops:
+  Exclude:
+    - '**/Vagrantfile'
+    - 'vendor/**/*'
+
+CyclomaticComplexity:
+  Max: 15
+
+PerceivedComplexity: 
+  Max: 20
+
+MethodLength:
+  Max: 30
+
+AbcSize:
+  Max: 25
+
+ClassLength:
+  Enabled: false
+
+LineLength:
+  Max: 150
+
+Blocks:
+  Enabled: false
+
+WordArray:
+  Enabled: false
+
+LeadingCommentSpace:
+  Enabled: false
+
+CommentAnnotation:
+  Enabled: false
+
+Documentation:
+  Enabled: false
+
+SpaceInsideHashLiteralBraces:
+  EnforcedStyle: no_space
+
+SignalException:
+  EnforcedStyle: only_raise
+
+TrivialAccessors:
+  AllowPredicates: true
