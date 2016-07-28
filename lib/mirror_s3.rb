@@ -227,9 +227,6 @@ class MirrorS3
     mirror_class_entries
 
     begin
-      # Clear out data from previous runs unless we are doing a full mirror
-      ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{MirrorFile.table_name}") unless incremental
-
       # Scan all files greater than max_fid in the source mogile database and copy over any
       # which are missing from the dest mogile database.
       mirror_missing_destination_files unless SignalHandler.instance.should_quit
@@ -307,7 +304,10 @@ class MirrorS3
       break if file.nil?
 
       # Quit if program exit has been requested.
-      break if SignalHandler.instance.should_quit
+      if SignalHandler.instance.should_quit
+        MirrorFile.destroy(file.fid)
+        next
+      end
 
       destfile = dest_resource.bucket(bucket_name(file.classname)).object(file.dkey)
       if destfile.exists?
@@ -322,6 +322,7 @@ class MirrorS3
             @copied_bytes += file.length
           rescue => e
             @failed += 1
+            file.destroy
             Log.instance.error("Error updating [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")
           end
         else
@@ -337,6 +338,7 @@ class MirrorS3
           @copied_bytes += file.length
         rescue => e
           @failed += 1
+          file.destroy
           Log.instance.error("Error adding [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")
         end
       end
@@ -378,10 +380,10 @@ class MirrorS3
   def remove_superfluous_destination_files
     dest_resource = Aws::S3::Resource.new(client: dest_s3_client)
 
-    # join mirror_file and dest_file and delete everything from dest_file which isn't in mirror_file
+    # join mirror_file and src_file and delete everything from dest_file which isn't in mirror_file
     # because mirror_file should represent the current state of the source mogile files
     Log.instance.info('Joining destination and mirror tables to determine files that have been deleted from source repo.')
-    DestFile.where('mirror_file.dkey IS NULL').joins('LEFT OUTER JOIN mirror_file ON mirror_file.dkey = file.dkey').find_in_batches(batch_size: 1000) do |batch|
+    MirrorFile.joins('LEFT OUTER JOIN file ON mirror_file.dkey = file.dkey').where('file.dkey IS NULL').order('mirror_file.dkey').find_in_batches(batch_size: 1000) do |batch|
       batch.each do |file|
         # Quit if program exit has been requested.
         break if SignalHandler.instance.should_quit
@@ -392,6 +394,7 @@ class MirrorS3
           destfile = dest_resource.bucket(bucket_name(file.classname)).object(file.dkey)
           if destfile.exists?
             destfile.delete
+            file.destroy
             @removed += 1
             @freed_bytes += file.length
           end
