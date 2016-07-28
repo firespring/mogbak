@@ -257,12 +257,11 @@ class Mirror
     mirror_class_entries
 
     begin
-      # Clear out data from previous runs unless we are doing a full mirror
-      ActiveRecord::Base.connection.execute("TRUNCATE TABLE #{MirrorFile.table_name}") unless incremental
+      starting_fid = incremental ? MirrorFile.max_fid : 0
 
-      # Scan all files greater than max_fid in the source mogile database and copy over any
+      # Scan all files greater than starting_fid in the source mogile database and copy over any
       # which are missing from the dest mogile database.
-      mirror_missing_destination_files unless SignalHandler.instance.should_quit
+      mirror_missing_destination_files(starting_fid) unless SignalHandler.instance.should_quit
 
       # This is only run when incremental is not set because it requires the mirror_files db to express
       # exactly the same state as the remote mogile db. Otherwise this would effectively do nothing.
@@ -290,27 +289,19 @@ class Mirror
   end
 
   # Mirror all files from the source mogile which do not exist in the destination mogile
-  def mirror_missing_destination_files
+  def mirror_missing_destination_files(starting_fid)
     # Find the id of the domain we are mirroring
     source_domain = SourceDomain.find_by_namespace(@source_mogile.domain)
 
-    # Get the max fid from the mirror db
-    # This will only be nonzero if we are doing an incremental
-    max_fid = MirrorFile.max_fid
-
     # Process source files in batches.
-    Log.instance.info("Searching for files in domain [ #{source_domain.namespace} ] whose fid is larger than [ #{max_fid} ].")
-    SourceFile.where('dmid = ? AND fid > ?', source_domain.dmid, max_fid).includes(:domain, :fileclass).find_in_batches(batch_size: 1000) do |batch|
+    Log.instance.info("Searching for files in domain [ #{source_domain.namespace} ] whose fid is larger than [ #{starting_fid} ].")
+    SourceFile.where('dmid = ? AND fid > ?', source_domain.dmid, starting_fid).includes(:domain, :fileclass).find_in_batches(batch_size: 1000) do |batch|
       # Create an array of MirrorFiles which represents files we have mirrored.
-      remotefiles = batch.collect { |file| MirrorFile.new(fid: file.fid, dkey: file.dkey, length: file.length, classname: file.classname) }
+      mirrored_files = batch_copy_missing_destination_files(batch)
 
       # Insert the mirror files in a batch format.
       Log.instance.debug('Bulk inserting mirror files.')
-      MirrorFile.import remotefiles
-
-      # Figure out which files need copied over
-      # (either because they are missing or because they have been updated)
-      batch_copy_missing_destination_files(remotefiles)
+      MirrorFile.import(mirrored_files, on_duplicate_key_update: [:dkey, :length, :classname])
 
       # Show our progress so people know we are working
       summarize
@@ -323,50 +314,56 @@ class Mirror
   # Process a batch of files determining if the file is missing or out of date.
   # If either is true, stream the file into the destination mogile.
   #
-  # params [List] files List of files to process
-  def batch_copy_missing_destination_files(files)
+  # params [List] batch List of files to process
+  def batch_copy_missing_destination_files(batch)
     dest_domain = DestDomain.find_by_namespace(@dest_mogile.domain)
 
-    files.each do |file|
+    batch.map do |batch_file|
       # Quit if no results
-      break if file.nil?
+      next if batch_file.nil?
 
       # Quit if program exit has been requested.
-      break if SignalHandler.instance.should_quit
+      next if SignalHandler.instance.should_quit
+
+      mirror_file = MirrorFile.new(fid: batch_file.fid, dkey: batch_file.dkey, length: batch_file.length, classname: batch_file.classname)
 
       # Look up the source file's key in the destination domain
-      destfile = DestFile.find_by_dkey_and_dmid(file.dkey, dest_domain.dmid)
+      destfile = DestFile.find_by_dkey_and_dmid(mirror_file.dkey, dest_domain.dmid)
       if destfile
         # File exists!
         # Check that the source and dest file sizes match
-        if file.length != destfile.length
+        if mirror_file.length != destfile.length
           # File exists but has been modified. Copy it over.
           begin
-            Log.instance.debug("Key [ #{file.dkey} ] is out of date. Updating.")
-            stream_copy(file)
+            Log.instance.debug("Key [ #{mirror_file.dkey} ] is out of date. Updating.")
+            stream_copy(mirror_file)
             @updated += 1
-            @copied_bytes += file.length
+            @copied_bytes += mirror_file.length
           rescue => e
             @failed += 1
-            Log.instance.error("Error updating [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")
+            Log.instance.error("Error updating [ #{mirror_file.dkey} ]: #{e.message}\n#{e.backtrace.join("\n")}")
+            next
           end
         else
-          Log.instance.debug("key [ #{file.dkey} ] is up to date.")
+          Log.instance.debug("key [ #{mirror_file.dkey} ] is up to date.")
           @uptodate += 1
         end
       else
         # File does not exist. Copy it over.
         begin
-          Log.instance.debug("key [ #{file.dkey} ] does not exist... creating.")
-          stream_copy(file)
+          Log.instance.debug("key [ #{mirror_file.dkey} ] does not exist... creating.")
+          stream_copy(mirror_file)
           @added += 1
-          @copied_bytes += file.length
+          @copied_bytes += mirror_file.length
         rescue => e
           @failed += 1
-          Log.instance.error("Error adding [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")
+          Log.instance.error("Error adding [ #{mirror_file.dkey} ]: #{e.message}\n#{e.backtrace.join("\n")}")
+          next
         end
       end
-    end
+
+      mirror_file
+    end.compact
   end
 
   # Opens a pipe between the two mogile instances and funnels the file from the source to the destination.
@@ -392,7 +389,7 @@ class Mirror
     Process.wait
 
     # Throw an exception if the child process exited non-zero
-    if $?.exitstatus.nonzero?
+    if !$?.exitstatus || $?.exitstatus.nonzero?
       Log.instance.error("Child exited with a status of [ #{$?.exitstatus} ].")
       raise "Error getting file data from [ #{@source_mogile.domain} ]"
     end

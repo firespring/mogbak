@@ -10,9 +10,9 @@ services:
     volumes:
       - .:/usr/src/app
       - ./mirror.settings.yml:/usr/src/app/mirror.settings.yml
-      - ../.history:/root/.history
-      - ../.irbrc:/root/.irbrc
-      - ../.pryrc:/root/.pryrc
+      - ../../.history:/root/.history
+      - ../../.irbrc:/root/.irbrc
+      - ../../.pryrc:/root/.pryrc
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       - srcmogile-tracker

@@ -1,26 +1,10 @@
 #!/usr/bin/env ruby
-#Realpath didn't exist in Ruby 1.8 so we'll add it.
-unless File.respond_to? :realpath
-  class File #:nodoc:
-    def self.realpath(path)
-      return realpath(File.readlink(path)) if symlink?(path)
-      path
-    end
-  end
-end
-$LOAD_PATH << File.expand_path(File.dirname(File.realpath(__FILE__)) + '/../lib')
 
 require 'monkey_patch'
 require 'rubygems'
 require 'gli'
 require 'mogbak_version'
 require 'validations'
-require 'create'
-require 'backup'
-require 'restore'
-require 'list'
-require 'mirror'
-require 'mirror_s3'
 require 'active_record'
 require 'activerecord-import'
 require 'composite_primary_keys'
@@ -31,6 +15,14 @@ require 'forkinator'
 require 'path_helper'
 require 'signal_handler'
 require 'log'
+
+$LOAD_PATH << File.expand_path(File.dirname(File.realpath(__FILE__)) + '/../lib')
+require 'create'
+require 'backup'
+require 'restore'
+require 'list'
+require 'mirror'
+require 'mirror_s3'
 
 #activate signal handler
 SignalHandler.instance

@@ -11,9 +11,9 @@ class MirrorS3
   def initialize(cli_settings = {})
     require 'sourcedomain'
     require 'sourcefile'
-    require 'aws-sdk'
-    require 'fileclass'
     require 'mirrorfile'
+    require 'fileclass'
+    require 'aws-sdk'
 
     @start = Time.now
     @uptodate = 0
@@ -227,9 +227,11 @@ class MirrorS3
     mirror_class_entries
 
     begin
-      # Scan all files greater than max_fid in the source mogile database and copy over any
+      starting_fid = incremental ? MirrorFile.max_fid : 0
+
+      # Scan all files greater than starting_fid in the source mogile database and copy over any
       # which are missing from the dest mogile database.
-      mirror_missing_destination_files unless SignalHandler.instance.should_quit
+      mirror_missing_destination_files(starting_fid) unless SignalHandler.instance.should_quit
 
       # This is only run when incremental is not set because it requires the mirror_files db to express
       # exactly the same state as the remote mogile db. Otherwise this would effectively do nothing.
@@ -258,23 +260,19 @@ class MirrorS3
   end
 
   # Mirror all files from the source mogile which do not exist in the destination mogile
-  def mirror_missing_destination_files
+  def mirror_missing_destination_files(starting_fid)
     # Find the id of the domain we are mirroring
     source_domain = SourceDomain.find_by_namespace(@source_mogile.domain)
 
-    # Get the max fid from the mirror db
-    # This will only be nonzero if we are doing an incremental
-    max_fid = MirrorFile.max_fid
-
     # Process source files in batches.
-    Log.instance.info("Searching for files in domain [ #{source_domain.namespace} ] whose fid is larger than [ #{max_fid} ].")
-    SourceFile.where('dmid = ? AND fid > ?', source_domain.dmid, max_fid).includes(:domain, :fileclass).find_in_batches(batch_size: 1000) do |batch|
+    Log.instance.info("Searching for files in domain [ #{source_domain.namespace} ] whose fid is larger than [ #{starting_fid} ].")
+    SourceFile.where('dmid = ? AND fid > ?', source_domain.dmid, starting_fid).includes(:domain, :fileclass).find_in_batches(batch_size: 1000) do |batch|
       # Create an array of MirrorFiles which represents files we have mirrored.
       mirrored_files = batch_copy_missing_destination_files(batch)
 
       # Insert the mirror files in a batch format.
       Log.instance.debug('Bulk inserting mirror files.')
-      MirrorFile.import(mirrored_files)
+      MirrorFile.import(mirrored_files, on_duplicate_key_update: [:dkey, :length, :classname])
 
       # Show our progress so people know we are working
       summarize
