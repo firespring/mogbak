@@ -270,15 +270,11 @@ class MirrorS3
     Log.instance.info("Searching for files in domain [ #{source_domain.namespace} ] whose fid is larger than [ #{max_fid} ].")
     SourceFile.where('dmid = ? AND fid > ?', source_domain.dmid, max_fid).includes(:domain, :fileclass).find_in_batches(batch_size: 1000) do |batch|
       # Create an array of MirrorFiles which represents files we have mirrored.
-      remotefiles = batch.collect { |file| MirrorFile.new(fid: file.fid, dkey: file.dkey, length: file.length, classname: file.classname) }
+      mirrored_files = batch_copy_missing_destination_files(batch)
 
       # Insert the mirror files in a batch format.
       Log.instance.debug('Bulk inserting mirror files.')
-      MirrorFile.import remotefiles
-
-      # Figure out which files need copied over
-      # (either because they are missing or because they have been updated)
-      batch_copy_missing_destination_files(remotefiles)
+      MirrorFile.import(mirrored_files)
 
       # Show our progress so people know we are working
       summarize
@@ -296,53 +292,54 @@ class MirrorS3
   # If either is true, stream the file into the destination mogile.
   #
   # params [List] files List of files to process
-  def batch_copy_missing_destination_files(files)
+  def batch_copy_missing_destination_files(batch)
     dest_resource = Aws::S3::Resource.new(client: dest_s3_client)
 
-    files.each do |file|
+    batch.map do |batch_file|
       # Quit if no results
-      break if file.nil?
+      next if batch_file.nil?
 
       # Quit if program exit has been requested.
-      if SignalHandler.instance.should_quit
-        MirrorFile.destroy(file.fid)
-        next
-      end
+      next if SignalHandler.instance.should_quit
 
-      destfile = dest_resource.bucket(bucket_name(file.classname)).object(file.dkey)
+      mirror_file = MirrorFile.new(fid: batch_file.fid, dkey: batch_file.dkey, length: batch_file.length, classname: batch_file.classname)
+      destfile = dest_resource.bucket(bucket_name(mirror_file.classname)).object(mirror_file.dkey)
+
       if destfile.exists?
         # File exists!
         # Check that the source and dest file sizes match
-        if file.length != destfile.content_length
+        if mirror_file.length != destfile.content_length
           # File exists but has been modified. Copy it over.
           begin
-            Log.instance.debug("Key [ #{file.dkey} ] is out of date. Updating.")
-            stream_copy(file, destfile)
+            Log.instance.debug("Key [ #{mirror_file.dkey} ] is out of date. Updating.")
+            stream_copy(mirror_file, destfile)
             @updated += 1
-            @copied_bytes += file.length
+            @copied_bytes += mirror_file.length
           rescue => e
             @failed += 1
-            file.destroy
-            Log.instance.error("Error updating [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")
+            Log.instance.error("Error updating [ #{mirror_file.dkey} ]: #{e.message}\n#{e.backtrace}")
+            next
           end
         else
-          Log.instance.debug("key [ #{file.dkey} ] is up to date.")
+          Log.instance.debug("key [ #{mirror_file.dkey} ] is up to date.")
           @uptodate += 1
         end
       else
         # File does not exist. Copy it over.
         begin
-          Log.instance.debug("key [ #{file.dkey} ] does not exist... creating.")
-          stream_copy(file, destfile)
+          Log.instance.debug("key [ #{mirror_file.dkey} ] does not exist... creating.")
+          stream_copy(mirror_file, destfile)
           @added += 1
-          @copied_bytes += file.length
+          @copied_bytes += mirror_file.length
         rescue => e
           @failed += 1
-          file.destroy
-          Log.instance.error("Error adding [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")
+          Log.instance.error("Error adding [ #{mirror_file.dkey} ]: #{e.message}\n#{e.backtrace}")
+          next
         end
       end
-    end
+
+      mirror_file
+    end.compact
   end
 
   # Opens a pipe between the two mogile instances and funnels the file from the source to the destination.
@@ -393,8 +390,12 @@ class MirrorS3
           Log.instance.debug("key [ #{file.dkey} ] should not exist. Deleting.")
           destfile = dest_resource.bucket(bucket_name(file.classname)).object(file.dkey)
           if destfile.exists?
+            # Remove from aws s3
             destfile.delete
+
+            # Remove from the mirrorfile db
             file.destroy
+
             @removed += 1
             @freed_bytes += file.length
           end
