@@ -1,6 +1,6 @@
 # Mirrors a mogile domain to an S3 bucket
 class MirrorS3
-  attr_accessor :dest_bucket, :source_mogile, :source_mogile_admin, :start, :added, :updated, :uptodate, :removed, :failures
+  attr_accessor :dest_s3_client, :source_mogile, :source_mogile_admin, :start, :added, :updated, :uptodate, :removed, :failures
 
   BYTE_RANGE = %w(TiB GiB MiB KiB B).freeze
   TIME_RANGE = [[60, :seconds], [60, :minutes], [24, :hours], [1000, :days]].freeze
@@ -12,8 +12,6 @@ class MirrorS3
     require 'sourcedomain'
     require 'sourcefile'
     require 'aws-sdk'
-    #require 'destdomain'
-    #require 'destfile'
     require 'fileclass'
     require 'mirrorfile'
 
@@ -28,7 +26,7 @@ class MirrorS3
 
     # If a settings file was given, use it. Otherwise default one.
     settings_path = cli_settings[:settings]
-    settings_path ||= File.expand_path(File.join(Dir.pwd, "#{self.class.name.downcase}.settings.yml"))
+    settings_path ||= File.expand_path(File.join(Dir.pwd, "#{self.class.name.underscore}.settings.yml"))
 
     # First see if a settings file exists. If it does, use it's properties as a starting point.
     settings = load_settings(settings_path)
@@ -40,78 +38,24 @@ class MirrorS3
     # This will map everything to the dest db connection by default
     establish_ar_connection(
       ActiveRecord::Base,
-#      settings[:dest][:db_host],
-#      settings[:dest][:db_port],
-#      settings[:dest][:db_username],
-#      settings[:dest][:db_passwd],
-#      settings[:dest][:db]
-#    )
-#
-#    # This will map the sourcedomain class to the source db connection
-#    establish_ar_connection(
-#      SourceDomain,
       settings[:source][:db_host],
       settings[:source][:db_port],
       settings[:source][:db_username],
       settings[:source][:db_passwd],
       settings[:source][:db]
     )
-#
-#    # This will map the sourcefile class to the source db connection
-#    establish_ar_connection(
-#      SourceFile,
-#      settings[:source][:db_host],
-#      settings[:source][:db_port],
-#      settings[:source][:db_username],
-#      settings[:source][:db_passwd],
-#      settings[:source][:db]
-#    )
 
     # Install the schema
     ActiveRecord::Migrator.up(File.expand_path(File.dirname(__FILE__)) + '/../db/migrate')
 
     # Verify s3 settings
-    Aws.config.update(
+    @dest_s3_client = Aws::S3::Client.new(
       region: 'us-west-2',
       credentials: Aws::Credentials.new(
         settings[:dest][:access_key_id],
         settings[:dest][:access_key]
       )
     )
-    @dest_s3_client = Aws::S3::Client.new #(
-    #  region: 'us-west-2',
-    #  credentials: Aws::Credentials.new(
-    #    settings[:dest][:access_key_id],
-    #    settings[:dest][:access_key]
-    #  )
-    #)
-    puts "CLIENT IS #{@dest_s3_client.inspect}"
-
-    puts "BUCKETS ARE #{@dest_s3_client.list_buckets.inspect}"
-    puts "BUCKET NAMES ARE #{@dest_s3_client.list_buckets.buckets.map(&:name)}"
-
-    Aws::S3::Resource.new
-    @dest_bucket = Aws::S3::Resource.new.bucket(settings[:dest][:bucket])
-
-    # reference an existing bucket by name
-    puts "DEST BUCKET IS #{@dest_bucket.inspect}"
-
-    # # enumerate every object in a bucket
-    @dest_bucket.objects.each do |obj|
-      puts "#{obj.key} => #{obj.etag}"
-    end
-
-#    @dest_mogile = mogile_tracker_connect(
-#      settings[:dest][:tracker_ip],
-#      settings[:dest][:tracker_port],
-#      settings[:dest][:domain]
-#    )
-#
-#    @dest_mogile_admin = mogile_admin_connect(
-#      settings[:dest][:tracker_ip],
-#      settings[:dest][:tracker_port],
-#      settings[:dest][:domain]
-#    )
 
     # Verify mogile settings
     @source_mogile = mogile_tracker_connect(
@@ -131,8 +75,6 @@ class MirrorS3
 
     # Set logging level to info unless --debug has been specified.
     Log.instance.level = Logger::INFO unless $debug
-
-exit 1
   end
 
   # Parse the file as a yaml config file and return a map of it's settings
@@ -175,7 +117,6 @@ exit 1
     settings[:dest] ||= {}
     settings[:dest][:access_key_id] =  cli_settings[:dest_access_key_id]  if cli_settings[:dest_access_key_id]
     settings[:dest][:access_key] =     cli_settings[:dest_access_key]     if cli_settings[:dest_access_key]
-    settings[:dest][:bucket] =         cli_settings[:dest_bucket]         if cli_settings[:dest_bucket]
   end
 
   # Save the settings for the backup into a yaml file (settings.yaml) so that
@@ -307,13 +248,14 @@ exit 1
   def mirror_class_entries
     # get_domains returns a hash of each domain's classes and their configuration settings
     source_domain_info = @source_mogile_admin.get_domains[@source_mogile.domain]
-    dest_domain_info = @dest_mogile_admin.get_domains[@dest_mogile.domain]
+    dest_resource = Aws::S3::Resource.new(client: dest_s3_client)
 
     # Loop through all of the source domain classes and add any which do not exist in the destination mogile.
     source_domain_info.each do |sourceclass, classinfo|
-      unless dest_domain_info.key?(sourceclass)
-        @dest_mogile_admin.create_class(@dest_mogile.domain, sourceclass, classinfo)
-        Log.instance.info("Added class #{sourceclass} to [ #{@dest_mogile.domain} ]")
+      bucket = dest_resource.bucket(bucket_name(sourceclass))
+      unless bucket.exists?
+        bucket.create
+        Log.instance.info("Added bucket #{bucket.name} to s3")
       end
     end
   end
@@ -349,12 +291,16 @@ exit 1
     end
   end
 
+  def bucket_name(classname)
+    "sbf.mogile.test.#{classname.gsub('_', '.')}"
+  end
+
   # Process a batch of files determining if the file is missing or out of date.
   # If either is true, stream the file into the destination mogile.
   #
   # params [List] files List of files to process
   def batch_copy_missing_destination_files(files)
-    dest_domain = DestDomain.find_by_namespace(@dest_mogile.domain)
+    dest_resource = Aws::S3::Resource.new(client: dest_s3_client)
 
     files.each do |file|
       # Quit if no results
@@ -363,16 +309,15 @@ exit 1
       # Quit if program exit has been requested.
       break if SignalHandler.instance.should_quit
 
-      # Look up the source file's key in the destination domain
-      destfile = DestFile.find_by_dkey_and_dmid(file.dkey, dest_domain.dmid)
-      if destfile
+      destfile = dest_resource.bucket(bucket_name(file.classname)).object(file.dkey)
+      if destfile.exists?
         # File exists!
         # Check that the source and dest file sizes match
-        if file.length != destfile.length
+        if file.length != destfile.content_length
           # File exists but has been modified. Copy it over.
           begin
             Log.instance.debug("Key [ #{file.dkey} ] is out of date. Updating.")
-            stream_copy(file)
+            stream_copy(file, destfile)
             @updated += 1
             @copied_bytes += file.length
           rescue => e
@@ -387,7 +332,7 @@ exit 1
         # File does not exist. Copy it over.
         begin
           Log.instance.debug("key [ #{file.dkey} ] does not exist... creating.")
-          stream_copy(file)
+          stream_copy(file, destfile)
           @added += 1
           @copied_bytes += file.length
         rescue => e
@@ -400,21 +345,22 @@ exit 1
 
   # Opens a pipe between the two mogile instances and funnels the file from the source to the destination.
   #
-  # @param [SourceFile] file The file to be copied
-  def stream_copy(file)
+  # @param [SourceFile] source_file The file to be copied
+  # @param [SourceFile] dest_file The file to be copied
+  def stream_copy(source_file, dest_file)
     # Create a pipe to link the get / store commands
     read_pipe, write_pipe = IO.pipe
 
     # Fork a child process to write to the pipe
     Process.fork do
       read_pipe.close
-      @source_mogile.get_file_data(file.dkey, write_pipe)
+      @source_mogile.get_file_data(source_file.dkey, write_pipe)
       write_pipe.close
     end
 
     # Read info off the pipe that the child is writing to
     write_pipe.close
-    @dest_mogile.store_file(file.dkey, file.classname, read_pipe)
+    dest_file.put(body: read_pipe.read)
     read_pipe.close
 
     # Wait for the child to exit
@@ -430,6 +376,8 @@ exit 1
   # Removes all files in the destination which are not in the source. This is done by comparing the
   # files in the destination with the table of files we have mirrored from source.
   def remove_superfluous_destination_files
+    dest_resource = Aws::S3::Resource.new(client: dest_s3_client)
+
     # join mirror_file and dest_file and delete everything from dest_file which isn't in mirror_file
     # because mirror_file should represent the current state of the source mogile files
     Log.instance.info('Joining destination and mirror tables to determine files that have been deleted from source repo.')
@@ -441,9 +389,13 @@ exit 1
         # Delete all files from our destination domain which no longer exist in the source domain.
         begin
           Log.instance.debug("key [ #{file.dkey} ] should not exist. Deleting.")
-          @dest_mogile.delete(file.dkey)
-          @removed += 1
-          @freed_bytes += file.length
+          destfile = dest_resource.bucket(bucket_name(file.classname)).object(file.dkey)
+          if destfile.exists?
+            destfile.delete
+            @removed += 1
+            @freed_bytes += file.length
+          end
+
         rescue => e
           @failed += 1
           Log.instance.error("Error deleting [ #{file.dkey} ]: #{e.message}\n#{e.backtrace}")

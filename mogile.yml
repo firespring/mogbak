@@ -17,7 +17,8 @@ services:
     depends_on:
       - srcmogile-tracker
       - dstmogile-tracker
-    command: bash -c 'sleep 15 && /usr/local/bundle/bin/bundle exec bin/mogbak --debug mirror'
+    #command: bash -c 'sleep 15 && /usr/local/bundle/bin/bundle exec bin/mogbak --debug mirror'
+    command: bash
 
   srcmogile-node:
     image: "sbfroot_mogile-node${DOCKER_TAG}"

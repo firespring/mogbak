@@ -379,9 +379,6 @@ command :'mirror_s3' do |c|
   c.desc 'dest access key'
   c.flag :dest_access_key
 
-  c.desc 'dest bucket'
-  c.flag :dest_bucket
-
   c.action do |_global_options, options, args|
     begin
       #required options and arguments
@@ -401,12 +398,6 @@ command :'mirror_s3' do |c|
         source_db_passwd: options[:source_dbpass],
         dest_access_key_id: options[:dest_access_key_id],
         dest_access_key: options[:dest_access_key],
-        dest_bucket: options[:dest_bucket],
-#        dest_db_host: options[:dest_dbhost],
-#        dest_db_port: options[:dest_dbport],
-#        dest_db: options[:dest_db],
-#        dest_db_username: options[:dest_dbuser],
-#        dest_db_passwd: options[:dest_dbpass],
         settings: !args.empty? ? args[0] : nil
       )
 
