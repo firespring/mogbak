@@ -283,7 +283,7 @@ class MirrorS3
   end
 
   def bucket_name(classname)
-    "sbf.mogile.test.#{classname.gsub('_', '.')}"
+    "sbf-#{classname.gsub('_', '-')}"
   end
 
   # Process a batch of files determining if the file is missing or out of date.

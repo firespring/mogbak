@@ -88,9 +88,7 @@ class ActiveRecord::Base
         end
       else
         values_sql.each do |values|
-          puts "RUNNING #{insert_sql + values}"
           ids << connection.insert(insert_sql + values)
-          puts "ID IS #{ids.last}"
           number_inserted += 1
         end
       end
